@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package logistics.analytics.v1;
+
+import "logistics/common/v1/common.proto";
+
+option go_package = "logistics/gen/go/analytics/v1;analyticsv1";
+
+service AnalyticsService {
+  // Подсчёт стоимости
+  rpc CalculateCost(CalculateCostRequest) returns (CalculateCostResponse);
+
+  // Поиск узких мест
+  rpc FindBottlenecks(FindBottlenecksRequest) returns (FindBottlenecksResponse);
+
+  // Полная аналитика
+  rpc AnalyzeFlow(AnalyzeFlowRequest) returns (AnalyzeFlowResponse);
+
+  // Сравнение сценариев
+  rpc CompareScenarios(CompareScenariosRequest) returns (CompareScenariosResponse);
+}
+
+// =======================================================
+//                   COST CALCULATION
+// =======================================================
+
+message CalculateCostRequest {
+  logistics.common.v1.Graph graph = 1;
+  CostOptions options = 2;
+}
+
+message CostOptions {
+  string currency = 1; // "USD", "RUB", etc.
+  bool include_fixed_costs = 2; // Включать фиксированные затраты
+  map<string, double> cost_multipliers = 3; // Множители по типам дорог
+
+  // Фиксированные затраты по типам узлов
+  FixedCostConfig fixed_costs = 4;
+
+  // Дополнительные параметры расчёта
+  CostCalculationMode mode = 5;
+
+  // Скидки/наценки
+  double discount_percent = 6; // Скидка в процентах (0-100)
+  double markup_percent = 7; // Наценка в процентах
+}
+
+// Конфигурация фиксированных затрат
+message FixedCostConfig {
+  // Затраты по типам узлов
+  double warehouse_cost = 1; // Стоимость использования склада
+  double delivery_point_cost = 2; // Стоимость точки доставки
+  double intersection_cost = 3; // Стоимость перекрёстка (обычно 0)
+
+  // Затраты по типам дорог (за единицу длины)
+  map<string, double> road_type_base_costs = 4; // Базовая стоимость по типу дороги
+
+  // Дополнительные фиксированные затраты
+  double base_operation_cost = 5; // Базовая стоимость операции
+  double per_edge_cost = 6; // Стоимость за каждое используемое ребро
+
+  // Затраты на единицу потока
+  double per_unit_handling_cost = 7; // Стоимость обработки единицы товара
+}
+
+// Режим расчёта стоимости
+enum CostCalculationMode {
+  COST_CALCULATION_MODE_UNSPECIFIED = 0;
+  COST_CALCULATION_MODE_SIMPLE = 1; // Только flow * cost
+  COST_CALCULATION_MODE_WITH_FIXED = 2; // + фиксированные затраты
+  COST_CALCULATION_MODE_FULL = 3; // Полный расчёт со всеми параметрами
+}
+
+message CalculateCostResponse {
+  double total_cost = 1;
+  string currency = 2;
+  CostBreakdown breakdown = 3;
+}
+
+message CostBreakdown {
+  double transport_cost = 1; // Стоимость перевозки (flow * cost)
+  double fixed_cost = 2; // Фиксированные затраты
+  double handling_cost = 3; // Стоимость обработки
+  double road_base_cost = 4; // Базовая стоимость дорог
+  double discount_amount = 5; // Сумма скидки
+  double markup_amount = 6; // Сумма наценки
+
+  map<string, double> cost_by_road_type = 7; // Разбивка по типам дорог
+  map<string, double> cost_by_node_type = 8; // Разбивка по типам узлов
+
+  // Детализация
+  int32 active_warehouses = 9; // Кол-во активных складов
+  int32 active_delivery_points = 10; // Кол-во активных точек доставки
+  int32 active_edges = 11; // Кол-во рёбер с потоком
+  double total_flow = 12; // Общий поток
+}
+
+// =======================================================
+//                   BOTTLENECK DETECTION
+// =======================================================
+
+message FindBottlenecksRequest {
+  logistics.common.v1.Graph graph = 1;
+  double utilization_threshold = 2; // Порог загрузки (0.9 = 90%)
+  int32 top_n = 3; // Сколько bottleneck'ов вернуть (0 = все)
+}
+
+message FindBottlenecksResponse {
+  repeated Bottleneck bottlenecks = 1;
+  repeated Recommendation recommendations = 2;
+}
+
+message Bottleneck {
+  logistics.common.v1.Edge edge = 1;
+  double utilization = 2; // Текущая загрузка (0-1)
+  double impact_score = 3; // Влияние на общий поток (0-1)
+  BottleneckSeverity severity = 4;
+}
+
+enum BottleneckSeverity {
+  BOTTLENECK_SEVERITY_UNSPECIFIED = 0;
+  BOTTLENECK_SEVERITY_LOW = 1; // 80-90% загрузки
+  BOTTLENECK_SEVERITY_MEDIUM = 2; // 90-95% загрузки
+  BOTTLENECK_SEVERITY_HIGH = 3; // 95-99% загрузки
+  BOTTLENECK_SEVERITY_CRITICAL = 4; // 100% загрузки
+}
+
+message Recommendation {
+  string type = 1; // "increase_capacity", "add_edge", etc.
+  string description = 2;
+  logistics.common.v1.EdgeKey affected_edge = 3;
+  double estimated_improvement = 4; // Ожидаемое улучшение потока в %
+  double estimated_cost = 5; // Примерная стоимость изменения
+}
+
+// =======================================================
+//                   FULL ANALYSIS
+// =======================================================
+
+message AnalyzeFlowRequest {
+  logistics.common.v1.Graph graph = 1;
+  AnalysisOptions options = 2;
+}
+
+message AnalysisOptions {
+  bool analyze_costs = 1;
+  bool find_bottlenecks = 2;
+  bool calculate_statistics = 3;
+  bool suggest_improvements = 4;
+  double bottleneck_threshold = 5;
+}
+
+message AnalyzeFlowResponse {
+  logistics.common.v1.FlowStatistics flow_stats = 1;
+  logistics.common.v1.GraphStatistics graph_stats = 2;
+  CalculateCostResponse cost = 3;
+  FindBottlenecksResponse bottlenecks = 4;
+  EfficiencyReport efficiency = 5;
+}
+
+message EfficiencyReport {
+  double overall_efficiency = 1; // 0-1, насколько эффективно используется сеть
+  double capacity_utilization = 2; // Средняя загрузка
+  int32 unused_edges_count = 3;
+  int32 saturated_edges_count = 4;
+  string grade = 5; // "A", "B", "C", "D", "F"
+}
+
+// =======================================================
+//                   SCENARIO COMPARISON
+// =======================================================
+
+message CompareScenariosRequest {
+  logistics.common.v1.Graph baseline = 1; // Базовый сценарий
+  repeated logistics.common.v1.Graph scenarios = 2; // Сценарии для сравнения
+  repeated string scenario_names = 3;
+}
+
+message CompareScenariosResponse {
+  repeated ScenarioResult results = 1;
+  string best_scenario = 2;
+  string comparison_summary = 3;
+}
+
+message ScenarioResult {
+  string name = 1;
+  double max_flow = 2;
+  double total_cost = 3;
+  double efficiency = 4;
+  double improvement_vs_baseline = 5; // В процентах
+}

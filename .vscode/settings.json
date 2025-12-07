@@ -1,0 +1,7 @@
+{
+  "go.buildTags": "integration",
+  "go.testTags": "integration",
+  "gopls": {
+    "build.buildFlags": ["-tags=integration"]
+  }
+}

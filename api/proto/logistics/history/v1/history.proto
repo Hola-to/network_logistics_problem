@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package logistics.history.v1;
+
+import "google/protobuf/timestamp.proto";
+import "logistics/common/v1/common.proto";
+import "logistics/optimization/v1/solver.proto";
+
+option go_package = "logistics/gen/go/history/v1;historyv1";
+
+service HistoryService {
+  rpc SaveCalculation(SaveCalculationRequest) returns (SaveCalculationResponse);
+  rpc GetCalculation(GetCalculationRequest) returns (GetCalculationResponse);
+  rpc ListCalculations(ListCalculationsRequest) returns (ListCalculationsResponse);
+  rpc DeleteCalculation(DeleteCalculationRequest) returns (DeleteCalculationResponse);
+  rpc GetStatistics(GetStatisticsRequest) returns (GetStatisticsResponse);
+}
+
+// =======================================================
+//                   SAVE
+// =======================================================
+
+message SaveCalculationRequest {
+  string user_id = 1;
+  logistics.optimization.v1.SolveRequest request = 2;
+  logistics.optimization.v1.SolveResponse response = 3;
+  string name = 4; // Опциональное имя расчёта
+  map<string, string> tags = 5; // Теги для фильтрации
+}
+
+message SaveCalculationResponse {
+  string calculation_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+// =======================================================
+//                   GET
+// =======================================================
+
+message GetCalculationRequest {
+  string calculation_id = 1;
+  string user_id = 2; // Для проверки доступа
+}
+
+message GetCalculationResponse {
+  CalculationRecord record = 1;
+}
+
+// =======================================================
+//                   LIST
+// =======================================================
+
+message ListCalculationsRequest {
+  string user_id = 1;
+  logistics.common.v1.PaginationRequest pagination = 2;
+  HistoryFilter filter = 3;
+  HistorySortOrder sort = 4;
+}
+
+message HistoryFilter {
+  logistics.common.v1.TimeRange time_range = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+  repeated string tags = 3;
+  double min_flow = 4;
+  double max_flow = 5;
+}
+
+enum HistorySortOrder {
+  HISTORY_SORT_ORDER_UNSPECIFIED = 0;
+  HISTORY_SORT_ORDER_CREATED_DESC = 1;
+  HISTORY_SORT_ORDER_CREATED_ASC = 2;
+  HISTORY_SORT_ORDER_MAX_FLOW_DESC = 3;
+  HISTORY_SORT_ORDER_COST_DESC = 4;
+}
+
+message ListCalculationsResponse {
+  repeated CalculationSummary calculations = 1;
+  logistics.common.v1.PaginationResponse pagination = 2;
+}
+
+// =======================================================
+//                   DELETE
+// =======================================================
+
+message DeleteCalculationRequest {
+  string calculation_id = 1;
+  string user_id = 2;
+}
+
+message DeleteCalculationResponse {
+  bool success = 1;
+}
+
+// =======================================================
+//                   STATISTICS
+// =======================================================
+
+message GetStatisticsRequest {
+  string user_id = 1;
+  logistics.common.v1.TimeRange time_range = 2;
+}
+
+message GetStatisticsResponse {
+  int32 total_calculations = 1;
+  double average_max_flow = 2;
+  double average_cost = 3;
+  double average_computation_time_ms = 4;
+  map<string, int32> calculations_by_algorithm = 5;
+  repeated DailyStats daily_stats = 6;
+}
+
+message DailyStats {
+  string date = 1; // "2024-01-15"
+  int32 count = 2;
+  double total_flow = 3;
+}
+
+// =======================================================
+//                   RECORDS
+// =======================================================
+
+message CalculationRecord {
+  string calculation_id = 1;
+  string user_id = 2;
+  string name = 3;
+  google.protobuf.Timestamp created_at = 4;
+
+  // Полные данные
+  logistics.optimization.v1.SolveRequest request = 5;
+  logistics.optimization.v1.SolveResponse response = 6;
+
+  // Метаданные
+  map<string, string> tags = 7;
+}
+
+message CalculationSummary {
+  string calculation_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+
+  // Ключевые метрики
+  double max_flow = 4;
+  double total_cost = 5;
+  logistics.common.v1.Algorithm algorithm = 6;
+  double computation_time_ms = 7;
+  int32 node_count = 8;
+  int32 edge_count = 9;
+
+  // Теги
+  repeated string tags = 10;
+}

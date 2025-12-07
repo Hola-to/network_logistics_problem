@@ -1,0 +1,283 @@
+syntax = "proto3";
+
+package logistics.audit.v1;
+
+import "google/protobuf/timestamp.proto";
+import "logistics/common/v1/common.proto";
+
+option go_package = "logistics/gen/go/audit/v1;auditv1";
+
+service AuditService {
+  // Записать аудит событие (внутренний вызов от других сервисов)
+  rpc LogEvent(LogEventRequest) returns (LogEventResponse);
+
+  // Записать batch событий
+  rpc LogEventBatch(LogEventBatchRequest) returns (LogEventBatchResponse);
+
+  // Получить аудит логи (для админов)
+  rpc GetAuditLogs(GetAuditLogsRequest) returns (GetAuditLogsResponse);
+
+  // Получить историю изменений ресурса
+  rpc GetResourceHistory(GetResourceHistoryRequest) returns (GetResourceHistoryResponse);
+
+  // Получить активность пользователя
+  rpc GetUserActivity(GetUserActivityRequest) returns (GetUserActivityResponse);
+
+  // Получить статистику аудита
+  rpc GetAuditStats(GetAuditStatsRequest) returns (GetAuditStatsResponse);
+
+  // Экспорт для compliance (streaming)
+  rpc ExportAuditLogs(ExportAuditLogsRequest) returns (stream AuditEntry);
+
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// =======================================================
+// AUDIT ENTRY
+// =======================================================
+
+message AuditEntry {
+  string id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+
+  // Источник
+  string service = 3;
+  string method = 4;
+  string request_id = 5;
+
+  // Действие
+  AuditAction action = 6;
+  AuditOutcome outcome = 7;
+
+  // Актор
+  string user_id = 8;
+  string username = 9;
+  string user_role = 10;
+
+  // Клиент
+  string client_ip = 11;
+  string user_agent = 12;
+
+  // Ресурс
+  string resource_type = 13;
+  string resource_id = 14;
+  string resource_name = 15;
+
+  // Детали
+  int64 duration_ms = 16;
+  string error_code = 17;
+  string error_message = 18;
+
+  // Изменения (для UPDATE)
+  ChangeSet changes = 19;
+
+  // Произвольные метаданные
+  map<string, string> metadata = 20;
+}
+
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_CREATE = 1;
+  AUDIT_ACTION_READ = 2;
+  AUDIT_ACTION_UPDATE = 3;
+  AUDIT_ACTION_DELETE = 4;
+  AUDIT_ACTION_LOGIN = 5;
+  AUDIT_ACTION_LOGOUT = 6;
+  AUDIT_ACTION_SOLVE = 7;
+  AUDIT_ACTION_ANALYZE = 8;
+  AUDIT_ACTION_VALIDATE = 9;
+  AUDIT_ACTION_EXPORT = 10;
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCESS = 1;
+  AUDIT_OUTCOME_FAILURE = 2;
+  AUDIT_OUTCOME_DENIED = 3;
+  AUDIT_OUTCOME_ERROR = 4;
+}
+
+message ChangeSet {
+  string before_json = 1; // JSON состояния до изменения
+  string after_json = 2; // JSON состояния после
+  repeated string changed_fields = 3;
+}
+
+// =======================================================
+// LOG EVENT
+// =======================================================
+
+message LogEventRequest {
+  AuditEntry entry = 1;
+}
+
+message LogEventResponse {
+  string event_id = 1;
+  bool success = 2;
+}
+
+message LogEventBatchRequest {
+  repeated AuditEntry entries = 1;
+}
+
+message LogEventBatchResponse {
+  int32 logged_count = 1;
+  int32 failed_count = 2;
+  repeated string failed_ids = 3;
+}
+
+// =======================================================
+// QUERY
+// =======================================================
+
+message GetAuditLogsRequest {
+  AuditFilter filter = 1;
+  logistics.common.v1.PaginationRequest pagination = 2;
+  AuditSortOrder sort = 3;
+}
+
+message AuditFilter {
+  logistics.common.v1.TimeRange time_range = 1;
+  repeated string services = 2;
+  repeated string methods = 3;
+  repeated AuditAction actions = 4;
+  repeated AuditOutcome outcomes = 5;
+  string user_id = 6;
+  string resource_type = 7;
+  string resource_id = 8;
+  string client_ip = 9;
+  string search_query = 10; // Полнотекстовый поиск
+}
+
+enum AuditSortOrder {
+  AUDIT_SORT_ORDER_UNSPECIFIED = 0;
+  AUDIT_SORT_ORDER_TIMESTAMP_DESC = 1;
+  AUDIT_SORT_ORDER_TIMESTAMP_ASC = 2;
+}
+
+message GetAuditLogsResponse {
+  repeated AuditEntry entries = 1;
+  logistics.common.v1.PaginationResponse pagination = 2;
+}
+
+// =======================================================
+// RESOURCE HISTORY
+// =======================================================
+
+message GetResourceHistoryRequest {
+  string resource_type = 1;
+  string resource_id = 2;
+  logistics.common.v1.PaginationRequest pagination = 3;
+}
+
+message GetResourceHistoryResponse {
+  repeated AuditEntry entries = 1;
+  logistics.common.v1.PaginationResponse pagination = 2;
+  ResourceSummary summary = 3;
+}
+
+message ResourceSummary {
+  google.protobuf.Timestamp created_at = 1;
+  string created_by = 2;
+  google.protobuf.Timestamp last_modified_at = 3;
+  string last_modified_by = 4;
+  int32 total_changes = 5;
+}
+
+// =======================================================
+// USER ACTIVITY
+// =======================================================
+
+message GetUserActivityRequest {
+  string user_id = 1;
+  logistics.common.v1.TimeRange time_range = 2;
+  logistics.common.v1.PaginationRequest pagination = 3;
+}
+
+message GetUserActivityResponse {
+  repeated AuditEntry entries = 1;
+  logistics.common.v1.PaginationResponse pagination = 2;
+  UserActivitySummary summary = 3;
+}
+
+message UserActivitySummary {
+  int32 total_actions = 1;
+  int32 successful_actions = 2;
+  int32 failed_actions = 3;
+  int32 denied_actions = 4;
+  map<string, int32> actions_by_type = 5;
+  map<string, int32> actions_by_service = 6;
+  google.protobuf.Timestamp first_activity = 7;
+  google.protobuf.Timestamp last_activity = 8;
+}
+
+// =======================================================
+// STATISTICS
+// =======================================================
+
+message GetAuditStatsRequest {
+  logistics.common.v1.TimeRange time_range = 1;
+  string group_by = 2; // "hour", "day", "service", "action"
+}
+
+message GetAuditStatsResponse {
+  AuditStatsSummary summary = 1;
+  repeated AuditStatsPoint timeline = 2;
+  map<string, int64> by_service = 3;
+  map<string, int64> by_action = 4;
+  map<string, int64> by_outcome = 5;
+  repeated TopUser top_users = 6;
+  repeated TopResource top_resources = 7;
+}
+
+message AuditStatsSummary {
+  int64 total_events = 1;
+  int64 successful_events = 2;
+  int64 failed_events = 3;
+  int64 denied_events = 4;
+  int64 unique_users = 5;
+  int64 unique_resources = 6;
+  double avg_duration_ms = 7;
+}
+
+message AuditStatsPoint {
+  google.protobuf.Timestamp timestamp = 1;
+  int64 count = 2;
+  int64 success_count = 3;
+  int64 failure_count = 4;
+}
+
+message TopUser {
+  string user_id = 1;
+  string username = 2;
+  int64 action_count = 3;
+}
+
+message TopResource {
+  string resource_type = 1;
+  string resource_id = 2;
+  int64 action_count = 3;
+}
+
+// =======================================================
+// EXPORT
+// =======================================================
+
+message ExportAuditLogsRequest {
+  AuditFilter filter = 1;
+  string format = 2; // "json", "csv"
+}
+
+// =======================================================
+// HEALTH
+// =======================================================
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_seconds = 3;
+  int64 total_events_stored = 4;
+}

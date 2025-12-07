@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package logistics.common.v1;
+
+option go_package = "logistics/gen/go/common/v1;commonv1";
+
+// =======================================================
+//                   ENUMS
+// =======================================================
+
+enum Algorithm {
+  ALGORITHM_UNSPECIFIED = 0;
+  ALGORITHM_EDMONDS_KARP = 1;
+  ALGORITHM_DINIC = 2;
+  ALGORITHM_MIN_COST = 3;
+  ALGORITHM_PUSH_RELABEL = 4;
+  ALGORITHM_FORD_FULKERSON = 5;
+}
+
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_WAREHOUSE = 1;
+  NODE_TYPE_DELIVERY_POINT = 2;
+  NODE_TYPE_INTERSECTION = 3;
+  NODE_TYPE_SOURCE = 4;
+  NODE_TYPE_SINK = 5;
+}
+
+enum RoadType {
+  ROAD_TYPE_UNSPECIFIED = 0;
+  ROAD_TYPE_HIGHWAY = 1;
+  ROAD_TYPE_PRIMARY = 2;
+  ROAD_TYPE_SECONDARY = 3;
+  ROAD_TYPE_LOCAL = 4;
+  ROAD_TYPE_URBAN = 5;
+}
+
+enum FlowStatus {
+  FLOW_STATUS_UNSPECIFIED = 0;
+  FLOW_STATUS_OPTIMAL = 1;
+  FLOW_STATUS_FEASIBLE = 2;
+  FLOW_STATUS_INFEASIBLE = 3;
+  FLOW_STATUS_UNBOUNDED = 4;
+  FLOW_STATUS_ERROR = 5;
+}
+
+// =======================================================
+//                   CORE ENTITIES
+// =======================================================
+
+message EdgeKey {
+  int64 from = 1;
+  int64 to = 2;
+}
+
+message Node {
+  int64 id = 1;
+  double x = 2;
+  double y = 3;
+  NodeType type = 4;
+  string name = 5;
+  map<string, string> metadata = 6;
+
+  // Для min-cost flow с множественными источниками/стоками
+  double supply = 7; // > 0 для источников
+  double demand = 8; // > 0 для стоков
+}
+
+message Edge {
+  int64 from = 1;
+  int64 to = 2;
+  double capacity = 3;
+  double cost = 4;
+  double length = 5;
+  RoadType road_type = 6;
+  double current_flow = 7;
+  bool bidirectional = 8;
+}
+
+message Graph {
+  repeated Node nodes = 1;
+  repeated Edge edges = 2;
+  int64 source_id = 3;
+  int64 sink_id = 4;
+  string name = 5;
+  map<string, string> metadata = 6;
+}
+
+message Path {
+  repeated int64 node_ids = 1;
+  double flow = 2;
+  double cost = 3;
+  double length = 4;
+}
+
+// =======================================================
+//                   FLOW RESULTS
+// =======================================================
+
+message FlowEdge {
+  int64 from = 1;
+  int64 to = 2;
+  double flow = 3;
+  double capacity = 4;
+  double cost = 5;
+  double utilization = 6;
+}
+
+message FlowResult {
+  double max_flow = 1;
+  double total_cost = 2;
+  repeated FlowEdge edges = 3;
+  repeated Path paths = 4;
+  FlowStatus status = 5;
+  int32 iterations = 6;
+  double computation_time_ms = 7;
+  string error_message = 8;
+}
+
+// =======================================================
+//                   STATISTICS
+// =======================================================
+
+message GraphStatistics {
+  int64 node_count = 1;
+  int64 edge_count = 2;
+  int64 warehouse_count = 3;
+  int64 delivery_point_count = 4;
+  double total_capacity = 5;
+  double average_edge_length = 6;
+  bool is_connected = 7;
+  double density = 8;
+}
+
+message FlowStatistics {
+  double total_flow = 1;
+  double total_cost = 2;
+  double average_utilization = 3;
+  int64 saturated_edges = 4;
+  int64 zero_flow_edges = 5;
+  repeated EdgeKey bottlenecks = 6;
+}
+
+// =======================================================
+//                   VALIDATION & ERRORS
+// =======================================================
+
+message ValidationError {
+  string field = 1;
+  string message = 2;
+  string code = 3;
+}
+
+message ValidationResult {
+  bool is_valid = 1;
+  repeated ValidationError errors = 2;
+}
+
+// ErrorDetail для передачи ошибок в ответах
+message ErrorDetail {
+  string code = 1; // "INVALID_GRAPH", "ALGORITHM_ERROR", etc.
+  string message = 2; // Human-readable сообщение
+  string field = 3; // Поле, вызвавшее ошибку (опционально)
+  map<string, string> metadata = 4; // Дополнительные данные
+}
+
+// =======================================================
+//                   PAGINATION
+// =======================================================
+
+message PaginationRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message PaginationResponse {
+  int32 current_page = 1;
+  int32 page_size = 2;
+  int32 total_pages = 3;
+  int64 total_items = 4;
+  bool has_next = 5;
+  bool has_previous = 6;
+}
+
+// =======================================================
+//                   TIME RANGE
+// =======================================================
+
+message TimeRange {
+  int64 start_timestamp = 1;
+  int64 end_timestamp = 2;
+}

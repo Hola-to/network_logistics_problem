@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package logistics.optimization.v1;
+
+import "google/protobuf/empty.proto";
+import "logistics/common/v1/common.proto";
+
+option go_package = "logistics/gen/go/optimization/v1;optimizationv1";
+
+service SolverService {
+  // Основной метод решения (Unary)
+  rpc Solve(SolveRequest) returns (SolveResponse);
+
+  // Streaming для больших графов
+  rpc SolveStream(SolveRequestForBigGraphs) returns (stream SolveProgress);
+
+  // Получить поддерживаемые алгоритмы
+  rpc GetAlgorithms(google.protobuf.Empty) returns (GetAlgorithmsResponse);
+}
+
+// =======================================================
+//                   SOLVE
+// =======================================================
+
+message SolveRequest {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+  SolveOptions options = 3;
+}
+
+message SolveRequestForBigGraphs {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+  SolveOptions options = 3;
+}
+
+message SolveOptions {
+  double timeout_seconds = 1; // Таймаут (0 = без лимита)
+  bool return_paths = 2; // Возвращать увеличивающие пути
+  int32 max_iterations = 3; // Лимит итераций (0 = без лимита)
+  double epsilon = 4; // Точность сравнения (default: 1e-9)
+}
+
+message SolveResponse {
+  bool success = 1;
+  logistics.common.v1.FlowResult result = 2;
+  logistics.common.v1.Graph solved_graph = 3; // Граф с заполненным current_flow
+  SolveMetrics metrics = 4;
+  string error_message = 5;
+}
+
+message SolveMetrics {
+  double computation_time_ms = 1;
+  int32 iterations = 2;
+  int32 augmenting_paths_found = 3;
+  int64 memory_used_bytes = 4;
+}
+
+// =======================================================
+//                   STREAMING PROGRESS
+// =======================================================
+
+message SolveProgress {
+  int32 iteration = 1;
+  double current_flow = 2;
+  double progress_percent = 3; // Примерный прогресс (эвристический или 100% в конце)
+  string status = 4; // "running", "completed", "error"
+  logistics.common.v1.Path last_path = 5; // Последний найденный путь (опционально)
+
+  // Новые поля для мониторинга
+  double computation_time_ms = 6; // Время с начала вычисления
+  int64 memory_used_bytes = 7; // Текущее потребление памяти (аллокации)
+}
+
+// =======================================================
+//                   ALGORITHMS INFO
+// =======================================================
+
+message GetAlgorithmsResponse {
+  repeated AlgorithmInfo algorithms = 1;
+}
+
+message AlgorithmInfo {
+  logistics.common.v1.Algorithm algorithm = 1;
+  string name = 2;
+  string description = 3;
+  string time_complexity = 4;
+  string space_complexity = 5;
+  bool supports_min_cost = 6;
+  bool supports_negative_costs = 7;
+  repeated string best_for = 8;
+}

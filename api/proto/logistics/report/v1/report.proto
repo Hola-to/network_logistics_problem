@@ -1,0 +1,521 @@
+// api/proto/logistics/report/v1/report.proto
+syntax = "proto3";
+
+package logistics.report.v1;
+
+import "google/protobuf/timestamp.proto";
+import "logistics/analytics/v1/analytics.proto";
+import "logistics/common/v1/common.proto";
+import "logistics/optimization/v1/solver.proto";
+import "logistics/simulation/v1/simulation.proto";
+
+option go_package = "logistics/gen/go/report/v1;reportv1";
+
+service ReportService {
+  // === Генерация отчётов ===
+
+  // Генерация отчёта по результатам оптимизации
+  rpc GenerateFlowReport(GenerateFlowReportRequest) returns (GenerateFlowReportResponse);
+
+  // Генерация отчёта по аналитике
+  rpc GenerateAnalyticsReport(GenerateAnalyticsReportRequest) returns (GenerateAnalyticsReportResponse);
+
+  // Генерация отчёта по симуляции
+  rpc GenerateSimulationReport(GenerateSimulationReportRequest) returns (GenerateSimulationReportResponse);
+
+  // Генерация сводного отчёта
+  rpc GenerateSummaryReport(GenerateSummaryReportRequest) returns (GenerateSummaryReportResponse);
+
+  // Генерация отчёта сравнения сценариев
+  rpc GenerateComparisonReport(GenerateComparisonReportRequest) returns (GenerateComparisonReportResponse);
+
+  // Генерация отчёта из истории
+  rpc GenerateHistoryReport(GenerateHistoryReportRequest) returns (GenerateHistoryReportResponse);
+
+  // Streaming для больших отчётов
+  rpc GenerateReportStream(GenerateReportStreamRequest) returns (stream ReportChunk);
+
+  // === Управление хранилищем ===
+
+  // Получить сохранённый отчёт
+  rpc GetReport(GetReportRequest) returns (GetReportResponse);
+
+  // Получить информацию об отчёте (без контента)
+  rpc GetReportInfo(GetReportInfoRequest) returns (GetReportInfoResponse);
+
+  // Список отчётов с фильтрацией
+  rpc ListReports(ListReportsRequest) returns (ListReportsResponse);
+
+  // Удалить отчёт
+  rpc DeleteReport(DeleteReportRequest) returns (DeleteReportResponse);
+
+  // Обновить теги отчёта
+  rpc UpdateReportTags(UpdateReportTagsRequest) returns (UpdateReportTagsResponse);
+
+  // Статистика хранилища
+  rpc GetRepositoryStats(GetRepositoryStatsRequest) returns (GetRepositoryStatsResponse);
+
+  // === Сервисные методы ===
+
+  // Получить список поддерживаемых форматов
+  rpc GetSupportedFormats(GetSupportedFormatsRequest) returns (GetSupportedFormatsResponse);
+
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum ReportFormat {
+  REPORT_FORMAT_UNSPECIFIED = 0;
+  REPORT_FORMAT_MARKDOWN = 1;
+  REPORT_FORMAT_CSV = 2;
+  REPORT_FORMAT_EXCEL = 3;
+  REPORT_FORMAT_PDF = 4;
+  REPORT_FORMAT_HTML = 5;
+  REPORT_FORMAT_JSON = 6;
+}
+
+enum ReportType {
+  REPORT_TYPE_UNSPECIFIED = 0;
+  REPORT_TYPE_FLOW = 1;
+  REPORT_TYPE_ANALYTICS = 2;
+  REPORT_TYPE_SIMULATION = 3;
+  REPORT_TYPE_SUMMARY = 4;
+  REPORT_TYPE_HISTORY = 5;
+  REPORT_TYPE_COMPARISON = 6;
+}
+
+// ============================================================
+// COMMON
+// ============================================================
+
+message ReportMetadata {
+  string report_id = 1;
+  string title = 2;
+  string description = 3;
+  ReportType type = 4;
+  ReportFormat format = 5;
+  google.protobuf.Timestamp generated_at = 6;
+  string generated_by = 7;
+  string version = 8;
+  int64 size_bytes = 9;
+  double generation_time_ms = 10;
+  map<string, string> custom_fields = 11;
+
+  // Связи
+  string calculation_id = 12;
+  string graph_id = 13;
+
+  // Теги для поиска
+  repeated string tags = 14;
+
+  // TTL
+  google.protobuf.Timestamp expires_at = 15;
+  string filename = 16;
+}
+
+message ReportOptions {
+  // Основные
+  string title = 1;
+  string description = 2;
+  string author = 3;
+
+  // Язык отчёта
+  string language = 4; // "ru", "en"
+
+  // Часовой пояс
+  string timezone = 5;
+
+  // Включать детали
+  bool include_graph_details = 6;
+  bool include_edge_list = 7;
+  bool include_node_list = 8;
+  bool include_path_details = 9;
+  bool include_recommendations = 10;
+  bool include_charts = 11; // Для HTML/PDF
+  bool include_raw_data = 12;
+
+  // Брендинг
+  string company_name = 13;
+  string logo_url = 14;
+
+  // Стиль
+  string theme = 15; // "light", "dark", "corporate"
+
+  // Лимиты
+  int32 max_edges_in_table = 16;
+  int32 max_paths_in_table = 17;
+
+  // Валюта для cost
+  string currency = 18;
+
+  // Теги для сохранения
+  repeated string tags = 19;
+
+  // TTL в секундах (0 = бессрочно)
+  int64 ttl_seconds = 20;
+
+  // Сохранять ли в хранилище
+  bool save_to_storage = 21;
+
+  // Дополнительные секции
+  repeated string additional_sections = 22;
+
+  // Пользовательские поля для метаданных
+  map<string, string> custom_fields = 23;
+}
+
+message ReportContent {
+  bytes data = 1;
+  string content_type = 2; // MIME type
+  string filename = 3;
+  int64 size_bytes = 4;
+}
+
+// ============================================================
+// FLOW REPORT
+// ============================================================
+
+message GenerateFlowReportRequest {
+  // Исходные данные
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.FlowResult result = 2;
+  logistics.optimization.v1.SolveMetrics metrics = 3;
+
+  // Формат
+  ReportFormat format = 4;
+
+  // Опции
+  ReportOptions options = 5;
+
+  // Связи
+  string calculation_id = 6;
+  string graph_id = 7;
+}
+
+message GenerateFlowReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// ANALYTICS REPORT
+// ============================================================
+
+message GenerateAnalyticsReportRequest {
+  logistics.common.v1.Graph graph = 1;
+
+  // Данные аналитики
+  logistics.analytics.v1.CalculateCostResponse cost = 2;
+  logistics.analytics.v1.FindBottlenecksResponse bottlenecks = 3;
+  logistics.analytics.v1.EfficiencyReport efficiency = 4;
+  logistics.common.v1.FlowStatistics flow_stats = 5;
+  logistics.common.v1.GraphStatistics graph_stats = 6;
+
+  ReportFormat format = 7;
+  ReportOptions options = 8;
+
+  string calculation_id = 9;
+  string graph_id = 10;
+}
+
+message GenerateAnalyticsReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// SIMULATION REPORT
+// ============================================================
+
+message GenerateSimulationReportRequest {
+  logistics.common.v1.Graph baseline_graph = 1;
+
+  // Результаты симуляции (один из)
+  oneof simulation_result {
+    logistics.simulation.v1.RunWhatIfResponse what_if = 2;
+    logistics.simulation.v1.CompareScenariosResponse comparison = 3;
+    logistics.simulation.v1.RunMonteCarloResponse monte_carlo = 4;
+    logistics.simulation.v1.AnalyzeSensitivityResponse sensitivity = 5;
+    logistics.simulation.v1.AnalyzeResilienceResponse resilience = 6;
+    logistics.simulation.v1.RunTimeSimulationResponse time_simulation = 7;
+  }
+
+  ReportFormat format = 10;
+  ReportOptions options = 11;
+
+  string calculation_id = 12;
+  string graph_id = 13;
+}
+
+message GenerateSimulationReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// SUMMARY REPORT
+// ============================================================
+
+message GenerateSummaryReportRequest {
+  // Объединённые данные
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.FlowResult flow_result = 2;
+  logistics.analytics.v1.AnalyzeFlowResponse analytics = 3;
+
+  // Опциональные данные симуляций
+  repeated SimulationSummaryData simulations = 4;
+
+  ReportFormat format = 5;
+  ReportOptions options = 6;
+
+  string calculation_id = 7;
+  string graph_id = 8;
+}
+
+message SimulationSummaryData {
+  string name = 1;
+  string type = 2;
+  string summary = 3;
+  map<string, double> key_metrics = 4;
+}
+
+message GenerateSummaryReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// COMPARISON REPORT
+// ============================================================
+
+message GenerateComparisonReportRequest {
+  repeated ComparisonItem items = 1;
+
+  ReportFormat format = 2;
+  ReportOptions options = 3;
+
+  string calculation_id = 4;
+}
+
+message ComparisonItem {
+  string name = 1;
+  logistics.common.v1.Graph graph = 2;
+  logistics.common.v1.FlowResult result = 3;
+  map<string, double> metrics = 4;
+}
+
+message GenerateComparisonReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// HISTORY REPORT
+// ============================================================
+
+message GenerateHistoryReportRequest {
+  string user_id = 1;
+  logistics.common.v1.TimeRange time_range = 2;
+
+  // Данные истории
+  repeated HistoryEntry entries = 3;
+  HistoryStatistics statistics = 4;
+
+  ReportFormat format = 5;
+  ReportOptions options = 6;
+}
+
+message HistoryEntry {
+  string calculation_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  string name = 3;
+  logistics.common.v1.Algorithm algorithm = 4;
+  double max_flow = 5;
+  double total_cost = 6;
+  double computation_time_ms = 7;
+  int32 node_count = 8;
+  int32 edge_count = 9;
+}
+
+message HistoryStatistics {
+  int32 total_calculations = 1;
+  double average_max_flow = 2;
+  double average_cost = 3;
+  double average_computation_time_ms = 4;
+  map<string, int32> by_algorithm = 5;
+}
+
+message GenerateHistoryReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+// ============================================================
+// STREAMING
+// ============================================================
+
+message GenerateReportStreamRequest {
+  oneof request {
+    GenerateFlowReportRequest flow = 1;
+    GenerateAnalyticsReportRequest analytics = 2;
+    GenerateSimulationReportRequest simulation = 3;
+    GenerateSummaryReportRequest summary = 4;
+  }
+}
+
+message ReportChunk {
+  int32 chunk_index = 1;
+  int32 total_chunks = 2;
+  bytes data = 3;
+  bool is_last = 4;
+  ReportMetadata metadata = 5; // Только в первом чанке
+}
+
+// ============================================================
+// STORAGE MANAGEMENT
+// ============================================================
+
+message GetReportRequest {
+  string report_id = 1;
+}
+
+message GetReportResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  ReportContent content = 3;
+  string error_message = 4;
+}
+
+message GetReportInfoRequest {
+  string report_id = 1;
+}
+
+message GetReportInfoResponse {
+  bool success = 1;
+  ReportMetadata metadata = 2;
+  string error_message = 3;
+}
+
+message ListReportsRequest {
+  // Пагинация
+  int32 limit = 1;
+  int32 offset = 2;
+
+  // Фильтры
+  ReportType report_type = 3;
+  ReportFormat format = 4;
+  string calculation_id = 5;
+  string graph_id = 6;
+  string user_id = 7;
+  repeated string tags = 8;
+
+  // Временной диапазон
+  google.protobuf.Timestamp created_after = 9;
+  google.protobuf.Timestamp created_before = 10;
+
+  // Сортировка
+  string order_by = 11; // created_at, size_bytes, title
+  bool order_desc = 12;
+}
+
+message ListReportsResponse {
+  repeated ReportMetadata reports = 1;
+  int64 total_count = 2;
+  bool has_more = 3;
+}
+
+message DeleteReportRequest {
+  string report_id = 1;
+  bool hard_delete = 2; // Физическое удаление
+}
+
+message DeleteReportResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message UpdateReportTagsRequest {
+  string report_id = 1;
+  repeated string tags = 2;
+  bool replace = 3; // true = заменить, false = добавить
+}
+
+message UpdateReportTagsResponse {
+  bool success = 1;
+  repeated string tags = 2;
+  string error_message = 3;
+}
+
+message GetRepositoryStatsRequest {
+  string user_id = 1; // Опционально - статистика по пользователю
+}
+
+message GetRepositoryStatsResponse {
+  int64 total_reports = 1;
+  int64 total_size_bytes = 2;
+  double avg_size_bytes = 3;
+  map<string, int64> reports_by_type = 4;
+  map<string, int64> reports_by_format = 5;
+  map<string, int64> size_by_type = 6;
+  google.protobuf.Timestamp oldest_report_at = 7;
+  google.protobuf.Timestamp newest_report_at = 8;
+  int64 expired_reports = 9;
+}
+
+// ============================================================
+// FORMATS
+// ============================================================
+
+message GetSupportedFormatsRequest {}
+
+message GetSupportedFormatsResponse {
+  repeated FormatInfo formats = 1;
+}
+
+message FormatInfo {
+  ReportFormat format = 1;
+  string name = 2;
+  string extension = 3;
+  string mime_type = 4;
+  bool supports_charts = 5;
+  bool supports_styling = 6;
+  repeated ReportType supported_report_types = 7;
+  int64 max_size_bytes = 8;
+}
+
+// ============================================================
+// HEALTH
+// ============================================================
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1; // SERVING, DEGRADED, NOT_SERVING
+  string version = 2;
+  int64 uptime_seconds = 3;
+  int64 reports_generated = 4;
+  StorageHealth storage = 5;
+}
+
+message StorageHealth {
+  string status = 1; // OK, ERROR, NOT_CONFIGURED
+  int64 stored_reports = 2;
+  int64 total_size_bytes = 3;
+  string error_message = 4;
+}

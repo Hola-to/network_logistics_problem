@@ -1,0 +1,14 @@
+# Binaries and build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+coverage.out
+
+# OS specific
+.DS_Store
+Thumbs.db

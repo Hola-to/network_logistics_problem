@@ -1,0 +1,7132 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "logistics/common/v1/common.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AnalyticsService"
+    },
+    {
+      "name": "AuditService"
+    },
+    {
+      "name": "AuthService"
+    },
+    {
+      "name": "GatewayService"
+    },
+    {
+      "name": "SolverService"
+    },
+    {
+      "name": "HistoryService"
+    },
+    {
+      "name": "SimulationService"
+    },
+    {
+      "name": "ReportService"
+    },
+    {
+      "name": "ValidationService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {},
+  "definitions": {
+    "google.protobuf.Any": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "google.rpc.Status": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/google.protobuf.Any"
+          }
+        }
+      }
+    },
+    "logistics.analytics.v1.AnalysisOptions": {
+      "type": "object",
+      "properties": {
+        "analyzeCosts": {
+          "type": "boolean"
+        },
+        "findBottlenecks": {
+          "type": "boolean"
+        },
+        "calculateStatistics": {
+          "type": "boolean"
+        },
+        "suggestImprovements": {
+          "type": "boolean"
+        },
+        "bottleneckThreshold": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.analytics.v1.AnalyzeFlowResponse": {
+      "type": "object",
+      "properties": {
+        "flowStats": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatistics"
+        },
+        "graphStats": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        },
+        "cost": {
+          "$ref": "#/definitions/logistics.analytics.v1.CalculateCostResponse"
+        },
+        "bottlenecks": {
+          "$ref": "#/definitions/logistics.analytics.v1.FindBottlenecksResponse"
+        },
+        "efficiency": {
+          "$ref": "#/definitions/logistics.analytics.v1.EfficiencyReport"
+        }
+      }
+    },
+    "logistics.analytics.v1.Bottleneck": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.Edge"
+        },
+        "utilization": {
+          "type": "number",
+          "format": "double",
+          "title": "Текущая загрузка (0-1)"
+        },
+        "impactScore": {
+          "type": "number",
+          "format": "double",
+          "title": "Влияние на общий поток (0-1)"
+        },
+        "severity": {
+          "$ref": "#/definitions/logistics.analytics.v1.BottleneckSeverity"
+        }
+      }
+    },
+    "logistics.analytics.v1.BottleneckSeverity": {
+      "type": "string",
+      "enum": [
+        "BOTTLENECK_SEVERITY_UNSPECIFIED",
+        "BOTTLENECK_SEVERITY_LOW",
+        "BOTTLENECK_SEVERITY_MEDIUM",
+        "BOTTLENECK_SEVERITY_HIGH",
+        "BOTTLENECK_SEVERITY_CRITICAL"
+      ],
+      "default": "BOTTLENECK_SEVERITY_UNSPECIFIED",
+      "title": "- BOTTLENECK_SEVERITY_LOW: 80-90% загрузки\n - BOTTLENECK_SEVERITY_MEDIUM: 90-95% загрузки\n - BOTTLENECK_SEVERITY_HIGH: 95-99% загрузки\n - BOTTLENECK_SEVERITY_CRITICAL: 100% загрузки"
+    },
+    "logistics.analytics.v1.CalculateCostResponse": {
+      "type": "object",
+      "properties": {
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "breakdown": {
+          "$ref": "#/definitions/logistics.analytics.v1.CostBreakdown"
+        }
+      }
+    },
+    "logistics.analytics.v1.CompareScenariosResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.analytics.v1.ScenarioResult"
+          }
+        },
+        "bestScenario": {
+          "type": "string"
+        },
+        "comparisonSummary": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.analytics.v1.CostBreakdown": {
+      "type": "object",
+      "properties": {
+        "transportCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость перевозки (flow * cost)"
+        },
+        "fixedCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Фиксированные затраты"
+        },
+        "handlingCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость обработки"
+        },
+        "roadBaseCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Базовая стоимость дорог"
+        },
+        "discountAmount": {
+          "type": "number",
+          "format": "double",
+          "title": "Сумма скидки"
+        },
+        "markupAmount": {
+          "type": "number",
+          "format": "double",
+          "title": "Сумма наценки"
+        },
+        "costByRoadType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "title": "Разбивка по типам дорог"
+        },
+        "costByNodeType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "title": "Разбивка по типам узлов"
+        },
+        "activeWarehouses": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Кол-во активных складов",
+          "title": "Детализация"
+        },
+        "activeDeliveryPoints": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Кол-во активных точек доставки"
+        },
+        "activeEdges": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Кол-во рёбер с потоком"
+        },
+        "totalFlow": {
+          "type": "number",
+          "format": "double",
+          "title": "Общий поток"
+        }
+      }
+    },
+    "logistics.analytics.v1.CostCalculationMode": {
+      "type": "string",
+      "enum": [
+        "COST_CALCULATION_MODE_UNSPECIFIED",
+        "COST_CALCULATION_MODE_SIMPLE",
+        "COST_CALCULATION_MODE_WITH_FIXED",
+        "COST_CALCULATION_MODE_FULL"
+      ],
+      "default": "COST_CALCULATION_MODE_UNSPECIFIED",
+      "description": "- COST_CALCULATION_MODE_SIMPLE: Только flow * cost\n - COST_CALCULATION_MODE_WITH_FIXED: + фиксированные затраты\n - COST_CALCULATION_MODE_FULL: Полный расчёт со всеми параметрами",
+      "title": "Режим расчёта стоимости"
+    },
+    "logistics.analytics.v1.CostOptions": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string",
+          "description": "\"USD\", \"RUB\", etc."
+        },
+        "includeFixedCosts": {
+          "type": "boolean",
+          "title": "Включать фиксированные затраты"
+        },
+        "costMultipliers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "title": "Множители по типам дорог"
+        },
+        "fixedCosts": {
+          "$ref": "#/definitions/logistics.analytics.v1.FixedCostConfig",
+          "title": "Фиксированные затраты по типам узлов"
+        },
+        "mode": {
+          "$ref": "#/definitions/logistics.analytics.v1.CostCalculationMode",
+          "title": "Дополнительные параметры расчёта"
+        },
+        "discountPercent": {
+          "type": "number",
+          "format": "double",
+          "description": "Скидка в процентах (0-100)",
+          "title": "Скидки/наценки"
+        },
+        "markupPercent": {
+          "type": "number",
+          "format": "double",
+          "title": "Наценка в процентах"
+        }
+      }
+    },
+    "logistics.analytics.v1.EfficiencyReport": {
+      "type": "object",
+      "properties": {
+        "overallEfficiency": {
+          "type": "number",
+          "format": "double",
+          "title": "0-1, насколько эффективно используется сеть"
+        },
+        "capacityUtilization": {
+          "type": "number",
+          "format": "double",
+          "title": "Средняя загрузка"
+        },
+        "unusedEdgesCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "saturatedEdgesCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "grade": {
+          "type": "string",
+          "title": "\"A\", \"B\", \"C\", \"D\", \"F\""
+        }
+      }
+    },
+    "logistics.analytics.v1.FindBottlenecksResponse": {
+      "type": "object",
+      "properties": {
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.analytics.v1.Bottleneck"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.analytics.v1.Recommendation"
+          }
+        }
+      }
+    },
+    "logistics.analytics.v1.FixedCostConfig": {
+      "type": "object",
+      "properties": {
+        "warehouseCost": {
+          "type": "number",
+          "format": "double",
+          "description": "Стоимость использования склада",
+          "title": "Затраты по типам узлов"
+        },
+        "deliveryPointCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость точки доставки"
+        },
+        "intersectionCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость перекрёстка (обычно 0)"
+        },
+        "roadTypeBaseCosts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "Базовая стоимость по типу дороги",
+          "title": "Затраты по типам дорог (за единицу длины)"
+        },
+        "baseOperationCost": {
+          "type": "number",
+          "format": "double",
+          "description": "Базовая стоимость операции",
+          "title": "Дополнительные фиксированные затраты"
+        },
+        "perEdgeCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость за каждое используемое ребро"
+        },
+        "perUnitHandlingCost": {
+          "type": "number",
+          "format": "double",
+          "description": "Стоимость обработки единицы товара",
+          "title": "Затраты на единицу потока"
+        }
+      },
+      "title": "Конфигурация фиксированных затрат"
+    },
+    "logistics.analytics.v1.Recommendation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "\"increase_capacity\", \"add_edge\", etc."
+        },
+        "description": {
+          "type": "string"
+        },
+        "affectedEdge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "estimatedImprovement": {
+          "type": "number",
+          "format": "double",
+          "title": "Ожидаемое улучшение потока в %"
+        },
+        "estimatedCost": {
+          "type": "number",
+          "format": "double",
+          "title": "Примерная стоимость изменения"
+        }
+      }
+    },
+    "logistics.analytics.v1.ScenarioResult": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "efficiency": {
+          "type": "number",
+          "format": "double"
+        },
+        "improvementVsBaseline": {
+          "type": "number",
+          "format": "double",
+          "title": "В процентах"
+        }
+      }
+    },
+    "logistics.audit.v1.AuditAction": {
+      "type": "string",
+      "enum": [
+        "AUDIT_ACTION_UNSPECIFIED",
+        "AUDIT_ACTION_CREATE",
+        "AUDIT_ACTION_READ",
+        "AUDIT_ACTION_UPDATE",
+        "AUDIT_ACTION_DELETE",
+        "AUDIT_ACTION_LOGIN",
+        "AUDIT_ACTION_LOGOUT",
+        "AUDIT_ACTION_SOLVE",
+        "AUDIT_ACTION_ANALYZE",
+        "AUDIT_ACTION_VALIDATE",
+        "AUDIT_ACTION_EXPORT"
+      ],
+      "default": "AUDIT_ACTION_UNSPECIFIED"
+    },
+    "logistics.audit.v1.AuditEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "service": {
+          "type": "string",
+          "title": "Источник"
+        },
+        "method": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/definitions/logistics.audit.v1.AuditAction",
+          "title": "Действие"
+        },
+        "outcome": {
+          "$ref": "#/definitions/logistics.audit.v1.AuditOutcome"
+        },
+        "userId": {
+          "type": "string",
+          "title": "Актор"
+        },
+        "username": {
+          "type": "string"
+        },
+        "userRole": {
+          "type": "string"
+        },
+        "clientIp": {
+          "type": "string",
+          "title": "Клиент"
+        },
+        "userAgent": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string",
+          "title": "Ресурс"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64",
+          "title": "Детали"
+        },
+        "errorCode": {
+          "type": "string"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "changes": {
+          "$ref": "#/definitions/logistics.audit.v1.ChangeSet",
+          "title": "Изменения (для UPDATE)"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Произвольные метаданные"
+        }
+      }
+    },
+    "logistics.audit.v1.AuditFilter": {
+      "type": "object",
+      "properties": {
+        "timeRange": {
+          "$ref": "#/definitions/logistics.common.v1.TimeRange"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/logistics.audit.v1.AuditAction"
+          }
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/logistics.audit.v1.AuditOutcome"
+          }
+        },
+        "userId": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "clientIp": {
+          "type": "string"
+        },
+        "searchQuery": {
+          "type": "string",
+          "title": "Полнотекстовый поиск"
+        }
+      }
+    },
+    "logistics.audit.v1.AuditOutcome": {
+      "type": "string",
+      "enum": [
+        "AUDIT_OUTCOME_UNSPECIFIED",
+        "AUDIT_OUTCOME_SUCCESS",
+        "AUDIT_OUTCOME_FAILURE",
+        "AUDIT_OUTCOME_DENIED",
+        "AUDIT_OUTCOME_ERROR"
+      ],
+      "default": "AUDIT_OUTCOME_UNSPECIFIED"
+    },
+    "logistics.audit.v1.AuditSortOrder": {
+      "type": "string",
+      "enum": [
+        "AUDIT_SORT_ORDER_UNSPECIFIED",
+        "AUDIT_SORT_ORDER_TIMESTAMP_DESC",
+        "AUDIT_SORT_ORDER_TIMESTAMP_ASC"
+      ],
+      "default": "AUDIT_SORT_ORDER_UNSPECIFIED"
+    },
+    "logistics.audit.v1.AuditStatsPoint": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "count": {
+          "type": "string",
+          "format": "int64"
+        },
+        "successCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failureCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.audit.v1.AuditStatsSummary": {
+      "type": "object",
+      "properties": {
+        "totalEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "successfulEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failedEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "deniedEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "uniqueUsers": {
+          "type": "string",
+          "format": "int64"
+        },
+        "uniqueResources": {
+          "type": "string",
+          "format": "int64"
+        },
+        "avgDurationMs": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.audit.v1.ChangeSet": {
+      "type": "object",
+      "properties": {
+        "beforeJson": {
+          "type": "string",
+          "title": "JSON состояния до изменения"
+        },
+        "afterJson": {
+          "type": "string",
+          "title": "JSON состояния после"
+        },
+        "changedFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.audit.v1.GetAuditLogsResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.AuditEntry"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/logistics.common.v1.PaginationResponse"
+        }
+      }
+    },
+    "logistics.audit.v1.GetAuditStatsResponse": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "$ref": "#/definitions/logistics.audit.v1.AuditStatsSummary"
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.AuditStatsPoint"
+          }
+        },
+        "byService": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "byAction": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "byOutcome": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "topUsers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.TopUser"
+          }
+        },
+        "topResources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.TopResource"
+          }
+        }
+      }
+    },
+    "logistics.audit.v1.GetResourceHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.AuditEntry"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/logistics.common.v1.PaginationResponse"
+        },
+        "summary": {
+          "$ref": "#/definitions/logistics.audit.v1.ResourceSummary"
+        }
+      }
+    },
+    "logistics.audit.v1.GetUserActivityResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.audit.v1.AuditEntry"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/logistics.common.v1.PaginationResponse"
+        },
+        "summary": {
+          "$ref": "#/definitions/logistics.audit.v1.UserActivitySummary"
+        }
+      }
+    },
+    "logistics.audit.v1.HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalEventsStored": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.audit.v1.LogEventBatchResponse": {
+      "type": "object",
+      "properties": {
+        "loggedCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.audit.v1.LogEventResponse": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.audit.v1.ResourceSummary": {
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "lastModifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastModifiedBy": {
+          "type": "string"
+        },
+        "totalChanges": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.audit.v1.TopResource": {
+      "type": "object",
+      "properties": {
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "actionCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.audit.v1.TopUser": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "actionCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.audit.v1.UserActivitySummary": {
+      "type": "object",
+      "properties": {
+        "totalActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "successfulActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "deniedActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "actionsByType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "actionsByService": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "firstActivity": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastActivity": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.auth.v1.LoginResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64",
+          "title": "Секунды до истечения"
+        },
+        "user": {
+          "$ref": "#/definitions/logistics.auth.v1.UserInfo"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.auth.v1.LogoutResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.auth.v1.RefreshTokenResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.auth.v1.RegisterResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.auth.v1.UserInfo": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "\"admin\", \"user\", \"viewer\""
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.auth.v1.ValidateTokenResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "user": {
+          "$ref": "#/definitions/logistics.auth.v1.UserInfo"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64",
+          "title": "Unix timestamp"
+        }
+      }
+    },
+    "logistics.common.v1.Algorithm": {
+      "type": "string",
+      "enum": [
+        "ALGORITHM_UNSPECIFIED",
+        "ALGORITHM_EDMONDS_KARP",
+        "ALGORITHM_DINIC",
+        "ALGORITHM_MIN_COST",
+        "ALGORITHM_PUSH_RELABEL",
+        "ALGORITHM_FORD_FULKERSON"
+      ],
+      "default": "ALGORITHM_UNSPECIFIED"
+    },
+    "logistics.common.v1.Edge": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "int64"
+        },
+        "to": {
+          "type": "string",
+          "format": "int64"
+        },
+        "capacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "length": {
+          "type": "number",
+          "format": "double"
+        },
+        "roadType": {
+          "$ref": "#/definitions/logistics.common.v1.RoadType"
+        },
+        "currentFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "bidirectional": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.common.v1.EdgeKey": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "int64"
+        },
+        "to": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.common.v1.ErrorDetail": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "\"INVALID_GRAPH\", \"ALGORITHM_ERROR\", etc."
+        },
+        "message": {
+          "type": "string",
+          "title": "Human-readable сообщение"
+        },
+        "field": {
+          "type": "string",
+          "title": "Поле, вызвавшее ошибку (опционально)"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Дополнительные данные"
+        }
+      },
+      "title": "ErrorDetail для передачи ошибок в ответах"
+    },
+    "logistics.common.v1.FlowEdge": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "int64"
+        },
+        "to": {
+          "type": "string",
+          "format": "int64"
+        },
+        "flow": {
+          "type": "number",
+          "format": "double"
+        },
+        "capacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "utilization": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.common.v1.FlowResult": {
+      "type": "object",
+      "properties": {
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.FlowEdge"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.Path"
+          }
+        },
+        "status": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatus"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.common.v1.FlowStatistics": {
+      "type": "object",
+      "properties": {
+        "totalFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageUtilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "saturatedEdges": {
+          "type": "string",
+          "format": "int64"
+        },
+        "zeroFlowEdges": {
+          "type": "string",
+          "format": "int64"
+        },
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        }
+      }
+    },
+    "logistics.common.v1.FlowStatus": {
+      "type": "string",
+      "enum": [
+        "FLOW_STATUS_UNSPECIFIED",
+        "FLOW_STATUS_OPTIMAL",
+        "FLOW_STATUS_FEASIBLE",
+        "FLOW_STATUS_INFEASIBLE",
+        "FLOW_STATUS_UNBOUNDED",
+        "FLOW_STATUS_ERROR"
+      ],
+      "default": "FLOW_STATUS_UNSPECIFIED"
+    },
+    "logistics.common.v1.Graph": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.Node"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.Edge"
+          }
+        },
+        "sourceId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "sinkId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.common.v1.GraphStatistics": {
+      "type": "object",
+      "properties": {
+        "nodeCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "edgeCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "warehouseCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "deliveryPointCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalCapacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageEdgeLength": {
+          "type": "number",
+          "format": "double"
+        },
+        "isConnected": {
+          "type": "boolean"
+        },
+        "density": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.common.v1.Node": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "x": {
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.common.v1.NodeType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "supply": {
+          "type": "number",
+          "format": "double",
+          "description": "\u003e 0 для источников",
+          "title": "Для min-cost flow с множественными источниками/стоками"
+        },
+        "demand": {
+          "type": "number",
+          "format": "double",
+          "title": "\u003e 0 для стоков"
+        }
+      }
+    },
+    "logistics.common.v1.NodeType": {
+      "type": "string",
+      "enum": [
+        "NODE_TYPE_UNSPECIFIED",
+        "NODE_TYPE_WAREHOUSE",
+        "NODE_TYPE_DELIVERY_POINT",
+        "NODE_TYPE_INTERSECTION",
+        "NODE_TYPE_SOURCE",
+        "NODE_TYPE_SINK"
+      ],
+      "default": "NODE_TYPE_UNSPECIFIED"
+    },
+    "logistics.common.v1.PaginationRequest": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.common.v1.PaginationResponse": {
+      "type": "object",
+      "properties": {
+        "currentPage": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalPages": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalItems": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasNext": {
+          "type": "boolean"
+        },
+        "hasPrevious": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.common.v1.Path": {
+      "type": "object",
+      "properties": {
+        "nodeIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "flow": {
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "length": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.common.v1.RoadType": {
+      "type": "string",
+      "enum": [
+        "ROAD_TYPE_UNSPECIFIED",
+        "ROAD_TYPE_HIGHWAY",
+        "ROAD_TYPE_PRIMARY",
+        "ROAD_TYPE_SECONDARY",
+        "ROAD_TYPE_LOCAL",
+        "ROAD_TYPE_URBAN"
+      ],
+      "default": "ROAD_TYPE_UNSPECIFIED"
+    },
+    "logistics.common.v1.TimeRange": {
+      "type": "object",
+      "properties": {
+        "startTimestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "endTimestamp": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.common.v1.ValidationError": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.common.v1.ValidationResult": {
+      "type": "object",
+      "properties": {
+        "isValid": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.ValidationError"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.AlgorithmComplexityEstimate": {
+      "type": "object",
+      "properties": {
+        "timeComplexity": {
+          "type": "string"
+        },
+        "spaceComplexity": {
+          "type": "string"
+        },
+        "estimatedIterations": {
+          "type": "string",
+          "format": "int64"
+        },
+        "estimatedTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "recommendation": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.AlgorithmInfo": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "timeComplexity": {
+          "type": "string"
+        },
+        "spaceComplexity": {
+          "type": "string"
+        },
+        "supportsMinCost": {
+          "type": "boolean"
+        },
+        "supportsNegativeCosts": {
+          "type": "boolean"
+        },
+        "bestFor": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.AlgorithmsResponse": {
+      "type": "object",
+      "properties": {
+        "algorithms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.AlgorithmInfo"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.AnalysisOptions": {
+      "type": "object",
+      "properties": {
+        "analyzeCosts": {
+          "type": "boolean"
+        },
+        "findBottlenecks": {
+          "type": "boolean"
+        },
+        "calculateStatistics": {
+          "type": "boolean"
+        },
+        "suggestImprovements": {
+          "type": "boolean"
+        },
+        "bottleneckThreshold": {
+          "type": "number",
+          "format": "double"
+        },
+        "costOptions": {
+          "$ref": "#/definitions/logistics.gateway.v1.CostOptions"
+        }
+      }
+    },
+    "logistics.gateway.v1.AnalyticsReportSource": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "analytics": {
+          "$ref": "#/definitions/logistics.gateway.v1.AnalyzeGraphResponse"
+        }
+      }
+    },
+    "logistics.gateway.v1.AnalyticsResult": {
+      "type": "object",
+      "properties": {
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "costBreakdown": {
+          "$ref": "#/definitions/logistics.gateway.v1.CostBreakdown"
+        },
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Bottleneck"
+          }
+        },
+        "bottlenecksCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Recommendation"
+          }
+        },
+        "efficiency": {
+          "$ref": "#/definitions/logistics.gateway.v1.EfficiencyReport"
+        },
+        "flowStats": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatistics"
+        }
+      }
+    },
+    "logistics.gateway.v1.AnalyzeGraphResponse": {
+      "type": "object",
+      "properties": {
+        "flowStats": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatistics"
+        },
+        "graphStats": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        },
+        "cost": {
+          "$ref": "#/definitions/logistics.gateway.v1.CostAnalysis"
+        },
+        "bottlenecks": {
+          "$ref": "#/definitions/logistics.gateway.v1.BottleneckAnalysis"
+        },
+        "efficiency": {
+          "$ref": "#/definitions/logistics.gateway.v1.EfficiencyReport"
+        }
+      }
+    },
+    "logistics.gateway.v1.AuditEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "service": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "clientIp": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.AuditLogsResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.AuditEntry"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.AuditStatsPoint": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "count": {
+          "type": "string",
+          "format": "int64"
+        },
+        "successCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failureCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.gateway.v1.AuditStatsResponse": {
+      "type": "object",
+      "properties": {
+        "totalEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "successfulEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failedEvents": {
+          "type": "string",
+          "format": "int64"
+        },
+        "uniqueUsers": {
+          "type": "string",
+          "format": "int64"
+        },
+        "byService": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "byAction": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.AuditStatsPoint"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.AuthResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        },
+        "user": {
+          "$ref": "#/definitions/logistics.gateway.v1.UserProfile"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.BatchSolveItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        }
+      }
+    },
+    "logistics.gateway.v1.BatchSolveResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.BatchSolveResult"
+          }
+        },
+        "totalTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "successful": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failed": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.BatchSolveResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.Bottleneck": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "utilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "impactScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "severity": {
+          "$ref": "#/definitions/logistics.gateway.v1.BottleneckSeverity"
+        }
+      }
+    },
+    "logistics.gateway.v1.BottleneckAnalysis": {
+      "type": "object",
+      "properties": {
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Bottleneck"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Recommendation"
+          }
+        },
+        "totalBottlenecks": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.BottleneckSeverity": {
+      "type": "string",
+      "enum": [
+        "BOTTLENECK_SEVERITY_UNSPECIFIED",
+        "BOTTLENECK_SEVERITY_LOW",
+        "BOTTLENECK_SEVERITY_MEDIUM",
+        "BOTTLENECK_SEVERITY_HIGH",
+        "BOTTLENECK_SEVERITY_CRITICAL"
+      ],
+      "default": "BOTTLENECK_SEVERITY_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.BottlenecksResponse": {
+      "type": "object",
+      "properties": {
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Bottleneck"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.Recommendation"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.CalculateCostResponse": {
+      "type": "object",
+      "properties": {
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "breakdown": {
+          "$ref": "#/definitions/logistics.gateway.v1.CostBreakdown"
+        }
+      }
+    },
+    "logistics.gateway.v1.CalculateLogisticsResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "validation": {
+          "$ref": "#/definitions/logistics.gateway.v1.ValidationResult",
+          "title": "Results"
+        },
+        "optimization": {
+          "$ref": "#/definitions/logistics.gateway.v1.SolveResult"
+        },
+        "analytics": {
+          "$ref": "#/definitions/logistics.gateway.v1.AnalyticsResult"
+        },
+        "report": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportInfo"
+        },
+        "calculationId": {
+          "type": "string",
+          "title": "Saved calculation ID"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.RequestMetadata",
+          "title": "Metadata"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.ErrorDetail"
+          },
+          "title": "Errors \u0026 Warnings"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.CalculationRecord": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.gateway.v1.SolveGraphResponse"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.CalculationSummary": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "nodeCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "edgeCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.CompareScenariosResponse": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+          }
+        },
+        "bestScenario": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.CostAnalysis": {
+      "type": "object",
+      "properties": {
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "breakdown": {
+          "$ref": "#/definitions/logistics.gateway.v1.CostBreakdown"
+        }
+      }
+    },
+    "logistics.gateway.v1.CostBreakdown": {
+      "type": "object",
+      "properties": {
+        "transportCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "fixedCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "handlingCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "discountAmount": {
+          "type": "number",
+          "format": "double"
+        },
+        "markupAmount": {
+          "type": "number",
+          "format": "double"
+        },
+        "costByRoadType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "costByNodeType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.CostOptions": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "includeFixedCosts": {
+          "type": "boolean"
+        },
+        "costMultipliers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "discountPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "markupPercent": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.CriticalEdge": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "criticalityScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowImpactIfRemoved": {
+          "type": "number",
+          "format": "double"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "isSinglePointOfFailure": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.CriticalElementsConfig": {
+      "type": "object",
+      "properties": {
+        "analyzeEdges": {
+          "type": "boolean"
+        },
+        "analyzeNodes": {
+          "type": "boolean"
+        },
+        "topN": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failureThreshold": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.CriticalElementsResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "criticalEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.CriticalEdge"
+          }
+        },
+        "criticalNodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.CriticalNode"
+          }
+        },
+        "singlePointsOfFailure": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        },
+        "resilienceScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.CriticalNode": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "criticalityScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowImpactIfRemoved": {
+          "type": "number",
+          "format": "double"
+        },
+        "affectedEdges": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.DailyStats": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalFlow": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.Distribution": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.gateway.v1.DistributionType"
+        },
+        "param1": {
+          "type": "number",
+          "format": "double",
+          "title": "mean for Normal, min for Uniform"
+        },
+        "param2": {
+          "type": "number",
+          "format": "double",
+          "title": "std_dev for Normal, max for Uniform"
+        },
+        "param3": {
+          "type": "number",
+          "format": "double",
+          "title": "mode for Triangular"
+        }
+      }
+    },
+    "logistics.gateway.v1.DistributionType": {
+      "type": "string",
+      "enum": [
+        "DISTRIBUTION_TYPE_UNSPECIFIED",
+        "DISTRIBUTION_TYPE_NORMAL",
+        "DISTRIBUTION_TYPE_UNIFORM",
+        "DISTRIBUTION_TYPE_TRIANGULAR"
+      ],
+      "default": "DISTRIBUTION_TYPE_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.EfficiencyReport": {
+      "type": "object",
+      "properties": {
+        "overallEfficiency": {
+          "type": "number",
+          "format": "double"
+        },
+        "capacityUtilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "unusedEdgesCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "saturatedEdgesCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "grade": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.FailureScenario": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "failedEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        },
+        "failedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "probability": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.FailureScenarioResult": {
+      "type": "object",
+      "properties": {
+        "scenarioName": {
+          "type": "string"
+        },
+        "probability": {
+          "type": "number",
+          "format": "double"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+        },
+        "vsBaseline": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioComparison"
+        },
+        "networkDisconnected": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.FailureSimulationResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+        },
+        "scenarioResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.FailureScenarioResult"
+          }
+        },
+        "stats": {
+          "$ref": "#/definitions/logistics.gateway.v1.FailureStats"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.FailureStats": {
+      "type": "object",
+      "properties": {
+        "expectedFlowLoss": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxFlowLoss": {
+          "type": "number",
+          "format": "double"
+        },
+        "probabilityOfDisconnection": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.FlowReportSource": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.gateway.v1.SolveMetrics"
+        }
+      }
+    },
+    "logistics.gateway.v1.GenerateReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "report": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportInfo"
+        },
+        "content": {
+          "type": "string",
+          "format": "byte"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "title": "HEALTHY, DEGRADED, UNHEALTHY"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/logistics.gateway.v1.ServiceHealth"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.HistoryReportSource": {
+      "type": "object",
+      "properties": {
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "calculationIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.ImpactLevel": {
+      "type": "string",
+      "enum": [
+        "IMPACT_LEVEL_UNSPECIFIED",
+        "IMPACT_LEVEL_NONE",
+        "IMPACT_LEVEL_LOW",
+        "IMPACT_LEVEL_MEDIUM",
+        "IMPACT_LEVEL_HIGH",
+        "IMPACT_LEVEL_CRITICAL"
+      ],
+      "default": "IMPACT_LEVEL_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.InfoResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rateLimit": {
+          "$ref": "#/definitions/logistics.gateway.v1.RateLimitInfo"
+        },
+        "buildInfo": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.ListCalculationsResponse": {
+      "type": "object",
+      "properties": {
+        "calculations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.CalculationSummary"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.ListReportsResponse": {
+      "type": "object",
+      "properties": {
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.ReportInfo"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.ListSimulationsResponse": {
+      "type": "object",
+      "properties": {
+        "simulations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.SimulationRecord"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.Modification": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.gateway.v1.ModificationType"
+        },
+        "edgeKey": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.gateway.v1.ModificationTarget"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        },
+        "isRelative": {
+          "type": "boolean",
+          "title": "true = multiply, false = set absolute"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.ModificationTarget": {
+      "type": "string",
+      "enum": [
+        "MODIFICATION_TARGET_UNSPECIFIED",
+        "MODIFICATION_TARGET_CAPACITY",
+        "MODIFICATION_TARGET_COST",
+        "MODIFICATION_TARGET_LENGTH"
+      ],
+      "default": "MODIFICATION_TARGET_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.ModificationType": {
+      "type": "string",
+      "enum": [
+        "MODIFICATION_TYPE_UNSPECIFIED",
+        "MODIFICATION_TYPE_UPDATE_EDGE",
+        "MODIFICATION_TYPE_REMOVE_EDGE",
+        "MODIFICATION_TYPE_ADD_EDGE",
+        "MODIFICATION_TYPE_UPDATE_NODE",
+        "MODIFICATION_TYPE_REMOVE_NODE"
+      ],
+      "default": "MODIFICATION_TYPE_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.MonteCarloConfig": {
+      "type": "object",
+      "properties": {
+        "numIterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "randomSeed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "confidenceLevel": {
+          "type": "number",
+          "format": "double"
+        },
+        "parallel": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.MonteCarloProgressEvent": {
+      "type": "object",
+      "properties": {
+        "iteration": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalIterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "progressPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "currentMeanFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "currentStdDev": {
+          "type": "number",
+          "format": "double"
+        },
+        "status": {
+          "type": "string"
+        },
+        "isFinal": {
+          "type": "boolean"
+        },
+        "finalResult": {
+          "$ref": "#/definitions/logistics.gateway.v1.MonteCarloResponse"
+        }
+      }
+    },
+    "logistics.gateway.v1.MonteCarloResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "flowStats": {
+          "$ref": "#/definitions/logistics.gateway.v1.MonteCarloStats"
+        },
+        "costStats": {
+          "$ref": "#/definitions/logistics.gateway.v1.MonteCarloStats"
+        },
+        "riskAnalysis": {
+          "$ref": "#/definitions/logistics.gateway.v1.RiskAnalysis"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.MonteCarloStats": {
+      "type": "object",
+      "properties": {
+        "mean": {
+          "type": "number",
+          "format": "double"
+        },
+        "stdDev": {
+          "type": "number",
+          "format": "double"
+        },
+        "min": {
+          "type": "number",
+          "format": "double"
+        },
+        "max": {
+          "type": "number",
+          "format": "double"
+        },
+        "median": {
+          "type": "number",
+          "format": "double"
+        },
+        "confidenceIntervalLow": {
+          "type": "number",
+          "format": "double"
+        },
+        "confidenceIntervalHigh": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.ParameterRanking": {
+      "type": "object",
+      "properties": {
+        "parameterId": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sensitivityIndex": {
+          "type": "number",
+          "format": "double"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.RateLimitInfo": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "requestsPerMinute": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "burstSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReadinessResponse": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.Recommendation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "affectedEdge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "estimatedImprovement": {
+          "type": "number",
+          "format": "double"
+        },
+        "estimatedCost": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportChunk": {
+      "type": "object",
+      "properties": {
+        "chunkIndex": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalChunks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "data": {
+          "type": "string",
+          "format": "byte"
+        },
+        "isLast": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportFormat": {
+      "type": "string",
+      "enum": [
+        "REPORT_FORMAT_UNSPECIFIED",
+        "REPORT_FORMAT_MARKDOWN",
+        "REPORT_FORMAT_CSV",
+        "REPORT_FORMAT_EXCEL",
+        "REPORT_FORMAT_PDF",
+        "REPORT_FORMAT_HTML",
+        "REPORT_FORMAT_JSON"
+      ],
+      "default": "REPORT_FORMAT_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.ReportFormatInfo": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportFormat"
+        },
+        "name": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "supportsCharts": {
+          "type": "boolean"
+        },
+        "supportsStyling": {
+          "type": "boolean"
+        },
+        "supportedReportTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/logistics.gateway.v1.ReportType"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportFormatsResponse": {
+      "type": "object",
+      "properties": {
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.ReportFormatInfo"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportInfo": {
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportType"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportFormat"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "generationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportOptions": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "includeGraphDetails": {
+          "type": "boolean"
+        },
+        "includeEdgeList": {
+          "type": "boolean"
+        },
+        "includePathDetails": {
+          "type": "boolean"
+        },
+        "includeRecommendations": {
+          "type": "boolean"
+        },
+        "includeCharts": {
+          "type": "boolean"
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ttlSeconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "saveToStorage": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportRecord": {
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string"
+        },
+        "info": {
+          "$ref": "#/definitions/logistics.gateway.v1.ReportInfo"
+        },
+        "content": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "logistics.gateway.v1.ReportType": {
+      "type": "string",
+      "enum": [
+        "REPORT_TYPE_UNSPECIFIED",
+        "REPORT_TYPE_FLOW",
+        "REPORT_TYPE_ANALYTICS",
+        "REPORT_TYPE_SIMULATION",
+        "REPORT_TYPE_SUMMARY",
+        "REPORT_TYPE_HISTORY",
+        "REPORT_TYPE_COMPARISON"
+      ],
+      "default": "REPORT_TYPE_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.RequestMetadata": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "totalTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "validationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "solveTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "analyticsTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "reportTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "serviceVersion": {
+          "type": "string"
+        },
+        "algorithmUsed": {
+          "type": "string"
+        },
+        "processedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "traceId": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.ResilienceConfig": {
+      "type": "object",
+      "properties": {
+        "maxFailuresToTest": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "testCascadingFailures": {
+          "type": "boolean"
+        },
+        "loadFactor": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.ResilienceMetrics": {
+      "type": "object",
+      "properties": {
+        "overallScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "connectivityRobustness": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowRobustness": {
+          "type": "number",
+          "format": "double"
+        },
+        "redundancyLevel": {
+          "type": "number",
+          "format": "double"
+        },
+        "minCutSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.ResilienceResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.gateway.v1.ResilienceMetrics"
+        },
+        "weaknesses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.ResilienceWeakness"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.ResilienceWeakness": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "number",
+          "format": "double"
+        },
+        "affectedEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        },
+        "mitigationSuggestion": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.RiskAnalysis": {
+      "type": "object",
+      "properties": {
+        "probabilityBelowThreshold": {
+          "type": "number",
+          "format": "double"
+        },
+        "valueAtRisk": {
+          "type": "number",
+          "format": "double"
+        },
+        "worstCaseFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "bestCaseFlow": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.SaveCalculationResponse": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.gateway.v1.ScenarioComparison": {
+      "type": "object",
+      "properties": {
+        "flowChange": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowChangePercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "costChange": {
+          "type": "number",
+          "format": "double"
+        },
+        "costChangePercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "impactSummary": {
+          "type": "string"
+        },
+        "impactLevel": {
+          "$ref": "#/definitions/logistics.gateway.v1.ImpactLevel"
+        }
+      }
+    },
+    "logistics.gateway.v1.ScenarioInput": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        }
+      }
+    },
+    "logistics.gateway.v1.ScenarioResult": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "efficiency": {
+          "type": "number",
+          "format": "double"
+        },
+        "improvementVsBaseline": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.SensitivityParameter": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.gateway.v1.ModificationTarget"
+        },
+        "minMultiplier": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxMultiplier": {
+          "type": "number",
+          "format": "double"
+        },
+        "numSteps": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.gateway.v1.SensitivityPoint": {
+      "type": "object",
+      "properties": {
+        "parameterValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "costValue": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.SensitivityResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.SensitivityResult"
+          }
+        },
+        "rankings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.ParameterRanking"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.SensitivityResult": {
+      "type": "object",
+      "properties": {
+        "parameterId": {
+          "type": "string"
+        },
+        "curve": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.SensitivityPoint"
+          }
+        },
+        "elasticity": {
+          "type": "number",
+          "format": "double"
+        },
+        "sensitivityIndex": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.ServiceHealth": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "latencyMs": {
+          "type": "string",
+          "format": "int64"
+        },
+        "error": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.SimulationMetadata": {
+      "type": "object",
+      "properties": {
+        "simulationId": {
+          "type": "string"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "algorithmUsed": {
+          "type": "string"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.gateway.v1.SimulationRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resultData": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "logistics.gateway.v1.SimulationReportSource": {
+      "type": "object",
+      "properties": {
+        "baselineGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "simulationType": {
+          "type": "string"
+        },
+        "simulationResult": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "logistics.gateway.v1.SolveGraphResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "solvedGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.gateway.v1.SolveMetrics"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.gateway.v1.SolveMetrics": {
+      "type": "object",
+      "properties": {
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "augmentingPathsFound": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.gateway.v1.SolveOptions": {
+      "type": "object",
+      "properties": {
+        "timeoutSeconds": {
+          "type": "number",
+          "format": "double"
+        },
+        "returnPaths": {
+          "type": "boolean"
+        },
+        "maxIterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "epsilon": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.SolveProgressEvent": {
+      "type": "object",
+      "properties": {
+        "iteration": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "currentFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "progressPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"running\", \"completed\", \"error\""
+        },
+        "lastPath": {
+          "$ref": "#/definitions/logistics.common.v1.Path"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "isFinal": {
+          "type": "boolean",
+          "title": "Final result (only in last event)"
+        },
+        "finalResult": {
+          "$ref": "#/definitions/logistics.gateway.v1.SolveGraphResponse"
+        }
+      }
+    },
+    "logistics.gateway.v1.SolveResult": {
+      "type": "object",
+      "properties": {
+        "solvedGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "status": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatus"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "pathsFound": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.Path"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.StatisticsResponse": {
+      "type": "object",
+      "properties": {
+        "totalCalculations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "averageMaxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageComputationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "calculationsByAlgorithm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "dailyStats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.DailyStats"
+          }
+        }
+      }
+    },
+    "logistics.gateway.v1.UncertaintySpec": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.gateway.v1.ModificationTarget"
+        },
+        "distribution": {
+          "$ref": "#/definitions/logistics.gateway.v1.Distribution"
+        }
+      }
+    },
+    "logistics.gateway.v1.UserActivityResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.gateway.v1.AuditEntry"
+          }
+        },
+        "summary": {
+          "$ref": "#/definitions/logistics.gateway.v1.UserActivitySummary"
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.gateway.v1.UserActivitySummary": {
+      "type": "object",
+      "properties": {
+        "totalActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "successfulActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedActions": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "actionsByType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "actionsByService": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "firstActivity": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastActivity": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.gateway.v1.UserProfile": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastLogin": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.gateway.v1.ValidateForAlgorithmResponse": {
+      "type": "object",
+      "properties": {
+        "isCompatible": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "complexity": {
+          "$ref": "#/definitions/logistics.gateway.v1.AlgorithmComplexityEstimate"
+        }
+      }
+    },
+    "logistics.gateway.v1.ValidateGraphResponse": {
+      "type": "object",
+      "properties": {
+        "isValid": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.ValidationError"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "statistics": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.gateway.v1.ValidationMetrics"
+        }
+      }
+    },
+    "logistics.gateway.v1.ValidateTokenResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.gateway.v1.ValidationLevel": {
+      "type": "string",
+      "enum": [
+        "VALIDATION_LEVEL_UNSPECIFIED",
+        "VALIDATION_LEVEL_BASIC",
+        "VALIDATION_LEVEL_STANDARD",
+        "VALIDATION_LEVEL_STRICT",
+        "VALIDATION_LEVEL_FULL"
+      ],
+      "default": "VALIDATION_LEVEL_UNSPECIFIED"
+    },
+    "logistics.gateway.v1.ValidationMetrics": {
+      "type": "object",
+      "properties": {
+        "totalChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "passedChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "durationMs": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.gateway.v1.ValidationResult": {
+      "type": "object",
+      "properties": {
+        "isValid": {
+          "type": "boolean"
+        },
+        "errorsCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "warningsCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.ValidationError"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "graphStats": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        }
+      }
+    },
+    "logistics.gateway.v1.WhatIfOptions": {
+      "type": "object",
+      "properties": {
+        "compareWithBaseline": {
+          "type": "boolean"
+        },
+        "calculateCostImpact": {
+          "type": "boolean"
+        },
+        "findNewBottlenecks": {
+          "type": "boolean"
+        },
+        "returnModifiedGraph": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.gateway.v1.WhatIfResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+        },
+        "modified": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioResult"
+        },
+        "comparison": {
+          "$ref": "#/definitions/logistics.gateway.v1.ScenarioComparison"
+        },
+        "modifiedGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.gateway.v1.SimulationMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.history.v1.CalculationRecord": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "request": {
+          "$ref": "#/definitions/logistics.optimization.v1.SolveRequest",
+          "title": "Полные данные"
+        },
+        "response": {
+          "$ref": "#/definitions/logistics.optimization.v1.SolveResponse"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Метаданные"
+        }
+      }
+    },
+    "logistics.history.v1.CalculationSummary": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double",
+          "title": "Ключевые метрики"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "nodeCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "edgeCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Теги"
+        }
+      }
+    },
+    "logistics.history.v1.DailyStats": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "title": "\"2024-01-15\""
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalFlow": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.history.v1.DeleteCalculationResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.history.v1.GetCalculationResponse": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "$ref": "#/definitions/logistics.history.v1.CalculationRecord"
+        }
+      }
+    },
+    "logistics.history.v1.GetStatisticsResponse": {
+      "type": "object",
+      "properties": {
+        "totalCalculations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "averageMaxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageComputationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "calculationsByAlgorithm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "dailyStats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.history.v1.DailyStats"
+          }
+        }
+      }
+    },
+    "logistics.history.v1.HistoryFilter": {
+      "type": "object",
+      "properties": {
+        "timeRange": {
+          "$ref": "#/definitions/logistics.common.v1.TimeRange"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.history.v1.HistorySortOrder": {
+      "type": "string",
+      "enum": [
+        "HISTORY_SORT_ORDER_UNSPECIFIED",
+        "HISTORY_SORT_ORDER_CREATED_DESC",
+        "HISTORY_SORT_ORDER_CREATED_ASC",
+        "HISTORY_SORT_ORDER_MAX_FLOW_DESC",
+        "HISTORY_SORT_ORDER_COST_DESC"
+      ],
+      "default": "HISTORY_SORT_ORDER_UNSPECIFIED"
+    },
+    "logistics.history.v1.ListCalculationsResponse": {
+      "type": "object",
+      "properties": {
+        "calculations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.history.v1.CalculationSummary"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/logistics.common.v1.PaginationResponse"
+        }
+      }
+    },
+    "logistics.history.v1.SaveCalculationResponse": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.optimization.v1.AlgorithmInfo": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "timeComplexity": {
+          "type": "string"
+        },
+        "spaceComplexity": {
+          "type": "string"
+        },
+        "supportsMinCost": {
+          "type": "boolean"
+        },
+        "supportsNegativeCosts": {
+          "type": "boolean"
+        },
+        "bestFor": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.optimization.v1.GetAlgorithmsResponse": {
+      "type": "object",
+      "properties": {
+        "algorithms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.optimization.v1.AlgorithmInfo"
+          }
+        }
+      }
+    },
+    "logistics.optimization.v1.SolveMetrics": {
+      "type": "object",
+      "properties": {
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "augmentingPathsFound": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.optimization.v1.SolveOptions": {
+      "type": "object",
+      "properties": {
+        "timeoutSeconds": {
+          "type": "number",
+          "format": "double",
+          "title": "Таймаут (0 = без лимита)"
+        },
+        "returnPaths": {
+          "type": "boolean",
+          "title": "Возвращать увеличивающие пути"
+        },
+        "maxIterations": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Лимит итераций (0 = без лимита)"
+        },
+        "epsilon": {
+          "type": "number",
+          "format": "double",
+          "title": "Точность сравнения (default: 1e-9)"
+        }
+      }
+    },
+    "logistics.optimization.v1.SolveProgress": {
+      "type": "object",
+      "properties": {
+        "iteration": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "currentFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "progressPercent": {
+          "type": "number",
+          "format": "double",
+          "title": "Примерный прогресс (эвристический или 100% в конце)"
+        },
+        "status": {
+          "type": "string",
+          "title": "\"running\", \"completed\", \"error\""
+        },
+        "lastPath": {
+          "$ref": "#/definitions/logistics.common.v1.Path",
+          "title": "Последний найденный путь (опционально)"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double",
+          "description": "Время с начала вычисления",
+          "title": "Новые поля для мониторинга"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "Текущее потребление памяти (аллокации)"
+        }
+      }
+    },
+    "logistics.optimization.v1.SolveRequest": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "options": {
+          "$ref": "#/definitions/logistics.optimization.v1.SolveOptions"
+        }
+      }
+    },
+    "logistics.optimization.v1.SolveResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "solvedGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph",
+          "title": "Граф с заполненным current_flow"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.optimization.v1.SolveMetrics"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.ComparisonItem": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      }
+    },
+    "logistics.report.v1.DeleteReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.FormatInfo": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat"
+        },
+        "name": {
+          "type": "string"
+        },
+        "extension": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "supportsCharts": {
+          "type": "boolean"
+        },
+        "supportsStyling": {
+          "type": "boolean"
+        },
+        "supportedReportTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/logistics.report.v1.ReportType"
+          }
+        },
+        "maxSizeBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateAnalyticsReportRequest": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "cost": {
+          "$ref": "#/definitions/logistics.analytics.v1.CalculateCostResponse",
+          "title": "Данные аналитики"
+        },
+        "bottlenecks": {
+          "$ref": "#/definitions/logistics.analytics.v1.FindBottlenecksResponse"
+        },
+        "efficiency": {
+          "$ref": "#/definitions/logistics.analytics.v1.EfficiencyReport"
+        },
+        "flowStats": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatistics"
+        },
+        "graphStats": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat"
+        },
+        "options": {
+          "$ref": "#/definitions/logistics.report.v1.ReportOptions"
+        },
+        "calculationId": {
+          "type": "string"
+        },
+        "graphId": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateAnalyticsReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateComparisonReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateFlowReportRequest": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph",
+          "title": "Исходные данные"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.optimization.v1.SolveMetrics"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat",
+          "title": "Формат"
+        },
+        "options": {
+          "$ref": "#/definitions/logistics.report.v1.ReportOptions",
+          "title": "Опции"
+        },
+        "calculationId": {
+          "type": "string",
+          "title": "Связи"
+        },
+        "graphId": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateFlowReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateHistoryReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateSimulationReportRequest": {
+      "type": "object",
+      "properties": {
+        "baselineGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph"
+        },
+        "whatIf": {
+          "$ref": "#/definitions/logistics.simulation.v1.RunWhatIfResponse"
+        },
+        "comparison": {
+          "$ref": "#/definitions/logistics.simulation.v1.CompareScenariosResponse"
+        },
+        "monteCarlo": {
+          "$ref": "#/definitions/logistics.simulation.v1.RunMonteCarloResponse"
+        },
+        "sensitivity": {
+          "$ref": "#/definitions/logistics.simulation.v1.AnalyzeSensitivityResponse"
+        },
+        "resilience": {
+          "$ref": "#/definitions/logistics.simulation.v1.AnalyzeResilienceResponse"
+        },
+        "timeSimulation": {
+          "$ref": "#/definitions/logistics.simulation.v1.RunTimeSimulationResponse"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat"
+        },
+        "options": {
+          "$ref": "#/definitions/logistics.report.v1.ReportOptions"
+        },
+        "calculationId": {
+          "type": "string"
+        },
+        "graphId": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateSimulationReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateSummaryReportRequest": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph",
+          "title": "Объединённые данные"
+        },
+        "flowResult": {
+          "$ref": "#/definitions/logistics.common.v1.FlowResult"
+        },
+        "analytics": {
+          "$ref": "#/definitions/logistics.analytics.v1.AnalyzeFlowResponse"
+        },
+        "simulations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.report.v1.SimulationSummaryData"
+          },
+          "title": "Опциональные данные симуляций"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat"
+        },
+        "options": {
+          "$ref": "#/definitions/logistics.report.v1.ReportOptions"
+        },
+        "calculationId": {
+          "type": "string"
+        },
+        "graphId": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GenerateSummaryReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GetReportInfoResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GetReportResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+        },
+        "content": {
+          "$ref": "#/definitions/logistics.report.v1.ReportContent"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.GetRepositoryStatsResponse": {
+      "type": "object",
+      "properties": {
+        "totalReports": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalSizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "avgSizeBytes": {
+          "type": "number",
+          "format": "double"
+        },
+        "reportsByType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "reportsByFormat": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "sizeByType": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "oldestReportAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "newestReportAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiredReports": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.report.v1.GetSupportedFormatsResponse": {
+      "type": "object",
+      "properties": {
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.report.v1.FormatInfo"
+          }
+        }
+      }
+    },
+    "logistics.report.v1.HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "title": "SERVING, DEGRADED, NOT_SERVING"
+        },
+        "version": {
+          "type": "string"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reportsGenerated": {
+          "type": "string",
+          "format": "int64"
+        },
+        "storage": {
+          "$ref": "#/definitions/logistics.report.v1.StorageHealth"
+        }
+      }
+    },
+    "logistics.report.v1.HistoryEntry": {
+      "type": "object",
+      "properties": {
+        "calculationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "type": "string"
+        },
+        "algorithm": {
+          "$ref": "#/definitions/logistics.common.v1.Algorithm"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "nodeCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "edgeCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.report.v1.HistoryStatistics": {
+      "type": "object",
+      "properties": {
+        "totalCalculations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "averageMaxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageComputationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "byAlgorithm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    },
+    "logistics.report.v1.ListReportsResponse": {
+      "type": "object",
+      "properties": {
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.report.v1.ReportMetadata"
+          }
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.report.v1.ReportChunk": {
+      "type": "object",
+      "properties": {
+        "chunkIndex": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalChunks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "data": {
+          "type": "string",
+          "format": "byte"
+        },
+        "isLast": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.report.v1.ReportMetadata",
+          "title": "Только в первом чанке"
+        }
+      }
+    },
+    "logistics.report.v1.ReportContent": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte"
+        },
+        "contentType": {
+          "type": "string",
+          "title": "MIME type"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.report.v1.ReportFormat": {
+      "type": "string",
+      "enum": [
+        "REPORT_FORMAT_UNSPECIFIED",
+        "REPORT_FORMAT_MARKDOWN",
+        "REPORT_FORMAT_CSV",
+        "REPORT_FORMAT_EXCEL",
+        "REPORT_FORMAT_PDF",
+        "REPORT_FORMAT_HTML",
+        "REPORT_FORMAT_JSON"
+      ],
+      "default": "REPORT_FORMAT_UNSPECIFIED"
+    },
+    "logistics.report.v1.ReportMetadata": {
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.report.v1.ReportType"
+        },
+        "format": {
+          "$ref": "#/definitions/logistics.report.v1.ReportFormat"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "generatedBy": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "generationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "customFields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "calculationId": {
+          "type": "string",
+          "title": "Связи"
+        },
+        "graphId": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Теги для поиска"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "TTL"
+        },
+        "filename": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.ReportOptions": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "title": "Основные"
+        },
+        "description": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string",
+          "description": "\"ru\", \"en\"",
+          "title": "Язык отчёта"
+        },
+        "timezone": {
+          "type": "string",
+          "title": "Часовой пояс"
+        },
+        "includeGraphDetails": {
+          "type": "boolean",
+          "title": "Включать детали"
+        },
+        "includeEdgeList": {
+          "type": "boolean"
+        },
+        "includeNodeList": {
+          "type": "boolean"
+        },
+        "includePathDetails": {
+          "type": "boolean"
+        },
+        "includeRecommendations": {
+          "type": "boolean"
+        },
+        "includeCharts": {
+          "type": "boolean",
+          "title": "Для HTML/PDF"
+        },
+        "includeRawData": {
+          "type": "boolean"
+        },
+        "companyName": {
+          "type": "string",
+          "title": "Брендинг"
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "string",
+          "description": "\"light\", \"dark\", \"corporate\"",
+          "title": "Стиль"
+        },
+        "maxEdgesInTable": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Лимиты"
+        },
+        "maxPathsInTable": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "currency": {
+          "type": "string",
+          "title": "Валюта для cost"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Теги для сохранения"
+        },
+        "ttlSeconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "TTL в секундах (0 = бессрочно)"
+        },
+        "saveToStorage": {
+          "type": "boolean",
+          "title": "Сохранять ли в хранилище"
+        },
+        "additionalSections": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Дополнительные секции"
+        },
+        "customFields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Пользовательские поля для метаданных"
+        }
+      }
+    },
+    "logistics.report.v1.ReportType": {
+      "type": "string",
+      "enum": [
+        "REPORT_TYPE_UNSPECIFIED",
+        "REPORT_TYPE_FLOW",
+        "REPORT_TYPE_ANALYTICS",
+        "REPORT_TYPE_SIMULATION",
+        "REPORT_TYPE_SUMMARY",
+        "REPORT_TYPE_HISTORY",
+        "REPORT_TYPE_COMPARISON"
+      ],
+      "default": "REPORT_TYPE_UNSPECIFIED"
+    },
+    "logistics.report.v1.SimulationSummaryData": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "keyMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      }
+    },
+    "logistics.report.v1.StorageHealth": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "title": "OK, ERROR, NOT_CONFIGURED"
+        },
+        "storedReports": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalSizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.report.v1.UpdateReportTagsResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errorMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.AnalyzeResilienceResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.simulation.v1.ResilienceMetrics",
+          "title": "Общие метрики"
+        },
+        "nMinusOne": {
+          "$ref": "#/definitions/logistics.simulation.v1.NMinusOneAnalysis",
+          "title": "N-1 анализ (устойчивость к одиночным отказам)"
+        },
+        "nMinusTwo": {
+          "$ref": "#/definitions/logistics.simulation.v1.NMinusTwoAnalysis",
+          "title": "N-2 анализ (опционально)"
+        },
+        "weaknesses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ResilienceWeakness"
+          },
+          "title": "Узкие места устойчивости"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.AnalyzeSensitivityResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "parameterResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.SensitivityResult"
+          },
+          "title": "Результаты по параметрам"
+        },
+        "rankings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ParameterRanking"
+          },
+          "title": "Рейтинг влияния"
+        },
+        "thresholds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ThresholdPoint"
+          },
+          "title": "Найденные пороги"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.BottleneckChange": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "changeType": {
+          "$ref": "#/definitions/logistics.simulation.v1.BottleneckChangeType"
+        },
+        "oldUtilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "newUtilization": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.BottleneckChangeType": {
+      "type": "string",
+      "enum": [
+        "BOTTLENECK_CHANGE_TYPE_UNSPECIFIED",
+        "BOTTLENECK_CHANGE_TYPE_NEW",
+        "BOTTLENECK_CHANGE_TYPE_RESOLVED",
+        "BOTTLENECK_CHANGE_TYPE_WORSENED",
+        "BOTTLENECK_CHANGE_TYPE_IMPROVED"
+      ],
+      "default": "BOTTLENECK_CHANGE_TYPE_UNSPECIFIED",
+      "title": "- BOTTLENECK_CHANGE_TYPE_NEW: Новый bottleneck\n - BOTTLENECK_CHANGE_TYPE_RESOLVED: Bottleneck устранён\n - BOTTLENECK_CHANGE_TYPE_WORSENED: Ухудшился\n - BOTTLENECK_CHANGE_TYPE_IMPROVED: Улучшился"
+    },
+    "logistics.simulation.v1.CompareOptions": {
+      "type": "object",
+      "properties": {
+        "rankByFlow": {
+          "type": "boolean"
+        },
+        "rankByCost": {
+          "type": "boolean"
+        },
+        "calculateRoi": {
+          "type": "boolean",
+          "title": "Return on Investment для изменений"
+        },
+        "modificationCostPerUnit": {
+          "type": "number",
+          "format": "double",
+          "title": "Стоимость увеличения capacity на 1"
+        }
+      }
+    },
+    "logistics.simulation.v1.CompareScenariosResponse": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "rankedScenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ScenarioResultWithRank"
+          }
+        },
+        "bestScenario": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.CriticalEdge": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "criticalityScore": {
+          "type": "number",
+          "format": "double",
+          "title": "0-1"
+        },
+        "flowImpactIfRemoved": {
+          "type": "number",
+          "format": "double",
+          "title": "Снижение потока"
+        },
+        "costImpactIfRemoved": {
+          "type": "number",
+          "format": "double",
+          "title": "Увеличение стоимости"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "isSinglePointOfFailure": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.simulation.v1.CriticalElementsConfig": {
+      "type": "object",
+      "properties": {
+        "analyzeEdges": {
+          "type": "boolean"
+        },
+        "analyzeNodes": {
+          "type": "boolean"
+        },
+        "topN": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Топ N критических"
+        },
+        "failureThreshold": {
+          "type": "number",
+          "format": "double",
+          "title": "Порог снижения потока для \"критичности\""
+        }
+      }
+    },
+    "logistics.simulation.v1.CriticalNode": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "criticalityScore": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowImpactIfRemoved": {
+          "type": "number",
+          "format": "double"
+        },
+        "affectedEdges": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "isSinglePointOfFailure": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.simulation.v1.CriticalPeriod": {
+      "type": "object",
+      "properties": {
+        "startStep": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "endStep": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.CriticalPeriodType"
+        },
+        "severity": {
+          "type": "number",
+          "format": "double"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.CriticalPeriodType": {
+      "type": "string",
+      "enum": [
+        "CRITICAL_PERIOD_TYPE_UNSPECIFIED",
+        "CRITICAL_PERIOD_TYPE_LOW_CAPACITY",
+        "CRITICAL_PERIOD_TYPE_HIGH_DEMAND",
+        "CRITICAL_PERIOD_TYPE_CONGESTION",
+        "CRITICAL_PERIOD_TYPE_FAILURE"
+      ],
+      "default": "CRITICAL_PERIOD_TYPE_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.Distribution": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.DistributionType"
+        },
+        "param1": {
+          "type": "number",
+          "format": "double",
+          "description": "mean для Normal, min для Uniform",
+          "title": "Параметры распределения"
+        },
+        "param2": {
+          "type": "number",
+          "format": "double",
+          "title": "std_dev для Normal, max для Uniform"
+        },
+        "param3": {
+          "type": "number",
+          "format": "double",
+          "title": "Дополнительный параметр"
+        }
+      }
+    },
+    "logistics.simulation.v1.DistributionType": {
+      "type": "string",
+      "enum": [
+        "DISTRIBUTION_TYPE_UNSPECIFIED",
+        "DISTRIBUTION_TYPE_NORMAL",
+        "DISTRIBUTION_TYPE_UNIFORM",
+        "DISTRIBUTION_TYPE_TRIANGULAR",
+        "DISTRIBUTION_TYPE_LOGNORMAL",
+        "DISTRIBUTION_TYPE_EXPONENTIAL"
+      ],
+      "default": "DISTRIBUTION_TYPE_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.EdgePair": {
+      "type": "object",
+      "properties": {
+        "edge1": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "edge2": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "combinedImpact": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.EdgeTimePattern": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "pattern": {
+          "$ref": "#/definitions/logistics.simulation.v1.TimePattern"
+        }
+      }
+    },
+    "logistics.simulation.v1.FailureScenario": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "failedEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        },
+        "failedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "probability": {
+          "type": "number",
+          "format": "double",
+          "title": "Вероятность сценария"
+        }
+      }
+    },
+    "logistics.simulation.v1.FailureScenarioResult": {
+      "type": "object",
+      "properties": {
+        "scenarioName": {
+          "type": "string"
+        },
+        "probability": {
+          "type": "number",
+          "format": "double"
+        },
+        "result": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "vsBaseline": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioComparison"
+        },
+        "networkDisconnected": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.simulation.v1.FailureStats": {
+      "type": "object",
+      "properties": {
+        "expectedFlowLoss": {
+          "type": "number",
+          "format": "double",
+          "title": "E[baseline_flow - scenario_flow]"
+        },
+        "maxFlowLoss": {
+          "type": "number",
+          "format": "double"
+        },
+        "probabilityOfDisconnection": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageRecoveryPotential": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.FindCriticalElementsResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "criticalEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.CriticalEdge"
+          }
+        },
+        "criticalNodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.CriticalNode"
+          }
+        },
+        "singlePointsOfFailure": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          },
+          "title": "Single Point of Failure"
+        },
+        "resilienceScore": {
+          "type": "number",
+          "format": "double",
+          "description": "0-1",
+          "title": "Общая оценка устойчивости"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.GetSimulationResponse": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationRecord"
+        }
+      }
+    },
+    "logistics.simulation.v1.HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.simulation.v1.HistogramBucket": {
+      "type": "object",
+      "properties": {
+        "lowerBound": {
+          "type": "number",
+          "format": "double"
+        },
+        "upperBound": {
+          "type": "number",
+          "format": "double"
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "frequency": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.ImpactLevel": {
+      "type": "string",
+      "enum": [
+        "IMPACT_LEVEL_UNSPECIFIED",
+        "IMPACT_LEVEL_NONE",
+        "IMPACT_LEVEL_LOW",
+        "IMPACT_LEVEL_MEDIUM",
+        "IMPACT_LEVEL_HIGH",
+        "IMPACT_LEVEL_CRITICAL"
+      ],
+      "default": "IMPACT_LEVEL_UNSPECIFIED",
+      "title": "- IMPACT_LEVEL_NONE: Нет влияния\n - IMPACT_LEVEL_LOW: \u003c 5%\n - IMPACT_LEVEL_MEDIUM: 5-15%\n - IMPACT_LEVEL_HIGH: 15-30%\n - IMPACT_LEVEL_CRITICAL: \u003e 30%"
+    },
+    "logistics.simulation.v1.ListSimulationsResponse": {
+      "type": "object",
+      "properties": {
+        "simulations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.SimulationSummary"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/logistics.common.v1.PaginationResponse"
+        }
+      }
+    },
+    "logistics.simulation.v1.Modification": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.ModificationType"
+        },
+        "edgeKey": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey",
+          "title": "Для модификации рёбер"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64",
+          "title": "Для модификации узлов"
+        },
+        "absoluteValue": {
+          "type": "number",
+          "format": "double",
+          "title": "Абсолютное значение"
+        },
+        "relativeChange": {
+          "type": "number",
+          "format": "double",
+          "title": "Относительное изменение (1.2 = +20%)"
+        },
+        "delta": {
+          "type": "number",
+          "format": "double",
+          "title": "Добавить/вычесть значение"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.simulation.v1.ModificationTarget",
+          "title": "Какой параметр меняем"
+        },
+        "description": {
+          "type": "string",
+          "title": "Описание"
+        }
+      }
+    },
+    "logistics.simulation.v1.ModificationTarget": {
+      "type": "string",
+      "enum": [
+        "MODIFICATION_TARGET_UNSPECIFIED",
+        "MODIFICATION_TARGET_CAPACITY",
+        "MODIFICATION_TARGET_COST",
+        "MODIFICATION_TARGET_LENGTH",
+        "MODIFICATION_TARGET_SUPPLY",
+        "MODIFICATION_TARGET_DEMAND"
+      ],
+      "default": "MODIFICATION_TARGET_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.ModificationType": {
+      "type": "string",
+      "enum": [
+        "MODIFICATION_TYPE_UNSPECIFIED",
+        "MODIFICATION_TYPE_UPDATE_EDGE",
+        "MODIFICATION_TYPE_REMOVE_EDGE",
+        "MODIFICATION_TYPE_ADD_EDGE",
+        "MODIFICATION_TYPE_UPDATE_NODE",
+        "MODIFICATION_TYPE_REMOVE_NODE",
+        "MODIFICATION_TYPE_DISABLE_NODE"
+      ],
+      "default": "MODIFICATION_TYPE_UNSPECIFIED",
+      "title": "- MODIFICATION_TYPE_UPDATE_EDGE: Изменить ребро\n - MODIFICATION_TYPE_REMOVE_EDGE: Удалить ребро\n - MODIFICATION_TYPE_ADD_EDGE: Добавить ребро\n - MODIFICATION_TYPE_UPDATE_NODE: Изменить узел\n - MODIFICATION_TYPE_REMOVE_NODE: Удалить узел\n - MODIFICATION_TYPE_DISABLE_NODE: Временно отключить узел"
+    },
+    "logistics.simulation.v1.MonteCarloConfig": {
+      "type": "object",
+      "properties": {
+        "numIterations": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Количество итераций"
+        },
+        "randomSeed": {
+          "type": "string",
+          "format": "int64",
+          "title": "Seed для воспроизводимости (0 = random)"
+        },
+        "confidenceLevel": {
+          "type": "number",
+          "format": "double",
+          "title": "0.95 для 95% CI"
+        },
+        "parallel": {
+          "type": "boolean",
+          "title": "Параллельное выполнение"
+        },
+        "maxWorkers": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Макс. воркеров"
+        }
+      }
+    },
+    "logistics.simulation.v1.MonteCarloProgress": {
+      "type": "object",
+      "properties": {
+        "iteration": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalIterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "progressPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "currentMeanFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "currentStdDev": {
+          "type": "number",
+          "format": "double"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.MonteCarloStats": {
+      "type": "object",
+      "properties": {
+        "mean": {
+          "type": "number",
+          "format": "double"
+        },
+        "stdDev": {
+          "type": "number",
+          "format": "double"
+        },
+        "min": {
+          "type": "number",
+          "format": "double"
+        },
+        "max": {
+          "type": "number",
+          "format": "double"
+        },
+        "median": {
+          "type": "number",
+          "format": "double"
+        },
+        "variance": {
+          "type": "number",
+          "format": "double"
+        },
+        "skewness": {
+          "type": "number",
+          "format": "double"
+        },
+        "kurtosis": {
+          "type": "number",
+          "format": "double"
+        },
+        "confidenceIntervalLow": {
+          "type": "number",
+          "format": "double"
+        },
+        "confidenceIntervalHigh": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.NMinusOneAnalysis": {
+      "type": "object",
+      "properties": {
+        "allScenariosFeasible": {
+          "type": "boolean"
+        },
+        "worstCaseFlowReduction": {
+          "type": "number",
+          "format": "double"
+        },
+        "mostCriticalEdge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "mostCriticalNode": {
+          "type": "string",
+          "format": "int64"
+        },
+        "scenariosTested": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "scenariosFailed": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.simulation.v1.NMinusTwoAnalysis": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "probabilityOfFailure": {
+          "type": "number",
+          "format": "double"
+        },
+        "criticalPairs": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "criticalEdgePairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.EdgePair"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.NodeTimePattern": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "pattern": {
+          "$ref": "#/definitions/logistics.simulation.v1.TimePattern"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.simulation.v1.PatternTarget",
+          "title": "supply или demand"
+        }
+      }
+    },
+    "logistics.simulation.v1.OverloadedEdge": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "requiredCapacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "availableCapacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "shortage": {
+          "type": "number",
+          "format": "double"
+        },
+        "shortagePercent": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.ParameterCorrelation": {
+      "type": "object",
+      "properties": {
+        "parameterName": {
+          "type": "string"
+        },
+        "correlationWithFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "correlationWithCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "importanceScore": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.ParameterRanking": {
+      "type": "object",
+      "properties": {
+        "parameterId": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sensitivityIndex": {
+          "type": "number",
+          "format": "double"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.PatternTarget": {
+      "type": "string",
+      "enum": [
+        "PATTERN_TARGET_UNSPECIFIED",
+        "PATTERN_TARGET_CAPACITY",
+        "PATTERN_TARGET_COST",
+        "PATTERN_TARGET_SUPPLY",
+        "PATTERN_TARGET_DEMAND"
+      ],
+      "default": "PATTERN_TARGET_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.PatternType": {
+      "type": "string",
+      "enum": [
+        "PATTERN_TYPE_UNSPECIFIED",
+        "PATTERN_TYPE_CONSTANT",
+        "PATTERN_TYPE_HOURLY",
+        "PATTERN_TYPE_DAILY",
+        "PATTERN_TYPE_CUSTOM",
+        "PATTERN_TYPE_RANDOM_NORMAL",
+        "PATTERN_TYPE_RANDOM_UNIFORM"
+      ],
+      "default": "PATTERN_TYPE_UNSPECIFIED",
+      "title": "- PATTERN_TYPE_CONSTANT: Постоянное значение\n - PATTERN_TYPE_HOURLY: Почасовой паттерн\n - PATTERN_TYPE_DAILY: Дневной паттерн (по дням недели)\n - PATTERN_TYPE_CUSTOM: Кастомные точки\n - PATTERN_TYPE_RANDOM_NORMAL: Нормальное распределение\n - PATTERN_TYPE_RANDOM_UNIFORM: Равномерное распределение"
+    },
+    "logistics.simulation.v1.RandomFailureConfig": {
+      "type": "object",
+      "properties": {
+        "numScenarios": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "edgeFailureProbability": {
+          "type": "number",
+          "format": "double",
+          "title": "P(edge fails)"
+        },
+        "nodeFailureProbability": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxSimultaneousFailures": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "correlatedFailures": {
+          "type": "boolean",
+          "title": "Связанные отказы"
+        }
+      }
+    },
+    "logistics.simulation.v1.RecommendationType": {
+      "type": "string",
+      "enum": [
+        "RECOMMENDATION_TYPE_UNSPECIFIED",
+        "RECOMMENDATION_TYPE_ADD_REDUNDANCY",
+        "RECOMMENDATION_TYPE_INCREASE_CAPACITY",
+        "RECOMMENDATION_TYPE_ADD_BACKUP_ROUTE",
+        "RECOMMENDATION_TYPE_RELOCATE_WAREHOUSE"
+      ],
+      "default": "RECOMMENDATION_TYPE_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.ResilienceConfig": {
+      "type": "object",
+      "properties": {
+        "maxFailuresToTest": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Тестировать до N отказов"
+        },
+        "testCascadingFailures": {
+          "type": "boolean",
+          "title": "Каскадные отказы"
+        },
+        "loadFactor": {
+          "type": "number",
+          "format": "double",
+          "title": "Коэффициент загрузки"
+        }
+      }
+    },
+    "logistics.simulation.v1.ResilienceMetrics": {
+      "type": "object",
+      "properties": {
+        "overallScore": {
+          "type": "number",
+          "format": "double",
+          "title": "0-1"
+        },
+        "connectivityRobustness": {
+          "type": "number",
+          "format": "double",
+          "title": "Устойчивость связности"
+        },
+        "flowRobustness": {
+          "type": "number",
+          "format": "double",
+          "title": "Устойчивость потока"
+        },
+        "redundancyLevel": {
+          "type": "number",
+          "format": "double",
+          "title": "Уровень резервирования"
+        },
+        "minCutSize": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Минимальный разрез"
+        }
+      }
+    },
+    "logistics.simulation.v1.ResilienceRecommendation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.RecommendationType"
+        },
+        "description": {
+          "type": "string"
+        },
+        "affectedEdge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+        },
+        "affectedNode": {
+          "type": "string",
+          "format": "int64"
+        },
+        "estimatedImprovement": {
+          "type": "number",
+          "format": "double"
+        },
+        "estimatedCost": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.ResilienceWeakness": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.WeaknessType"
+        },
+        "severity": {
+          "type": "number",
+          "format": "double"
+        },
+        "affectedEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        },
+        "affectedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "mitigationSuggestion": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.RiskAnalysis": {
+      "type": "object",
+      "properties": {
+        "probabilityBelowThreshold": {
+          "type": "number",
+          "format": "double",
+          "title": "P(flow \u003c threshold)"
+        },
+        "valueAtRisk": {
+          "type": "number",
+          "format": "double",
+          "title": "VaR"
+        },
+        "expectedShortfall": {
+          "type": "number",
+          "format": "double",
+          "title": "CVaR"
+        },
+        "worstCaseFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "bestCaseFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "riskScenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.RiskScenario"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.RiskScenario": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "probability": {
+          "type": "number",
+          "format": "double"
+        },
+        "flowImpact": {
+          "type": "number",
+          "format": "double"
+        },
+        "costImpact": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.RunMonteCarloResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "flowStats": {
+          "$ref": "#/definitions/logistics.simulation.v1.MonteCarloStats",
+          "title": "Статистика результатов"
+        },
+        "costStats": {
+          "$ref": "#/definitions/logistics.simulation.v1.MonteCarloStats"
+        },
+        "flowHistogram": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.HistogramBucket"
+          },
+          "title": "Распределение результатов"
+        },
+        "costHistogram": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.HistogramBucket"
+          }
+        },
+        "flowPercentiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "\"p5\", \"p25\", \"p50\", \"p75\", \"p95\"",
+          "title": "Percentiles"
+        },
+        "costPercentiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "riskAnalysis": {
+          "$ref": "#/definitions/logistics.simulation.v1.RiskAnalysis",
+          "title": "Анализ рисков"
+        },
+        "correlations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ParameterCorrelation"
+          },
+          "title": "Корреляции"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.RunTimeSimulationResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "stepResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.TimeStepResult"
+          },
+          "title": "Результаты по временным шагам"
+        },
+        "stats": {
+          "$ref": "#/definitions/logistics.simulation.v1.TimeSimulationStats",
+          "title": "Агрегированная статистика"
+        },
+        "criticalPeriods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.CriticalPeriod"
+          },
+          "title": "Критические периоды"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.RunWhatIfResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult",
+          "title": "Результаты baseline"
+        },
+        "modified": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult",
+          "title": "Результаты после модификаций"
+        },
+        "comparison": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioComparison",
+          "title": "Сравнение"
+        },
+        "modifiedGraph": {
+          "$ref": "#/definitions/logistics.common.v1.Graph",
+          "title": "Модифицированный граф"
+        },
+        "bottleneckChanges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.BottleneckChange"
+          },
+          "title": "Новые bottlenecks"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata",
+          "title": "Метаданные"
+        }
+      }
+    },
+    "logistics.simulation.v1.SaveSimulationResponse": {
+      "type": "object",
+      "properties": {
+        "simulationId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.simulation.v1.Scenario": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "modifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.Modification"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.ScenarioComparison": {
+      "type": "object",
+      "properties": {
+        "flowChange": {
+          "type": "number",
+          "format": "double",
+          "title": "Абсолютное изменение"
+        },
+        "flowChangePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "В процентах"
+        },
+        "costChange": {
+          "type": "number",
+          "format": "double"
+        },
+        "costChangePercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "utilizationChange": {
+          "type": "number",
+          "format": "double"
+        },
+        "impactSummary": {
+          "type": "string",
+          "title": "Текстовое описание"
+        },
+        "impactLevel": {
+          "$ref": "#/definitions/logistics.simulation.v1.ImpactLevel"
+        }
+      }
+    },
+    "logistics.simulation.v1.ScenarioResult": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageUtilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "saturatedEdges": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "activePaths": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "status": {
+          "$ref": "#/definitions/logistics.common.v1.FlowStatus"
+        }
+      }
+    },
+    "logistics.simulation.v1.ScenarioResultWithRank": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "score": {
+          "type": "number",
+          "format": "double",
+          "title": "Комбинированный score"
+        },
+        "roi": {
+          "type": "number",
+          "format": "double",
+          "title": "ROI если запрошено"
+        },
+        "vsBaseline": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioComparison"
+        }
+      }
+    },
+    "logistics.simulation.v1.SensitivityConfig": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/logistics.simulation.v1.SensitivityMethod"
+        },
+        "calculateElasticity": {
+          "type": "boolean",
+          "title": "Эластичность"
+        },
+        "findThresholds": {
+          "type": "boolean",
+          "title": "Пороговые значения"
+        }
+      }
+    },
+    "logistics.simulation.v1.SensitivityLevel": {
+      "type": "string",
+      "enum": [
+        "SENSITIVITY_LEVEL_UNSPECIFIED",
+        "SENSITIVITY_LEVEL_NEGLIGIBLE",
+        "SENSITIVITY_LEVEL_LOW",
+        "SENSITIVITY_LEVEL_MEDIUM",
+        "SENSITIVITY_LEVEL_HIGH",
+        "SENSITIVITY_LEVEL_CRITICAL"
+      ],
+      "default": "SENSITIVITY_LEVEL_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.SensitivityMethod": {
+      "type": "string",
+      "enum": [
+        "SENSITIVITY_METHOD_UNSPECIFIED",
+        "SENSITIVITY_METHOD_ONE_AT_A_TIME",
+        "SENSITIVITY_METHOD_MORRIS",
+        "SENSITIVITY_METHOD_SOBOL"
+      ],
+      "default": "SENSITIVITY_METHOD_UNSPECIFIED",
+      "title": "- SENSITIVITY_METHOD_ONE_AT_A_TIME: OAT\n - SENSITIVITY_METHOD_MORRIS: Morris screening\n - SENSITIVITY_METHOD_SOBOL: Sobol indices (требует много итераций)"
+    },
+    "logistics.simulation.v1.SensitivityParameter": {
+      "type": "object",
+      "properties": {
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey",
+          "title": "Идентификация параметра"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.simulation.v1.ModificationTarget"
+        },
+        "minMultiplier": {
+          "type": "number",
+          "format": "double",
+          "description": "0.5 = -50%",
+          "title": "Диапазон изменения"
+        },
+        "maxMultiplier": {
+          "type": "number",
+          "format": "double",
+          "title": "1.5 = +50%"
+        },
+        "numSteps": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Количество точек"
+        }
+      }
+    },
+    "logistics.simulation.v1.SensitivityPoint": {
+      "type": "object",
+      "properties": {
+        "parameterValue": {
+          "type": "number",
+          "format": "double",
+          "title": "Множитель"
+        },
+        "flowValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "costValue": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.SensitivityResult": {
+      "type": "object",
+      "properties": {
+        "parameterId": {
+          "type": "string"
+        },
+        "curve": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.SensitivityPoint"
+          },
+          "title": "Кривая чувствительности"
+        },
+        "elasticity": {
+          "type": "number",
+          "format": "double",
+          "description": "% изменения output / % изменения input",
+          "title": "Метрики"
+        },
+        "sensitivityIndex": {
+          "type": "number",
+          "format": "double",
+          "title": "Нормализованный индекс 0-1"
+        },
+        "impactRange": {
+          "type": "number",
+          "format": "double",
+          "title": "max_flow - min_flow"
+        },
+        "level": {
+          "$ref": "#/definitions/logistics.simulation.v1.SensitivityLevel"
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulateFailuresResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "scenarioResults": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.FailureScenarioResult"
+          }
+        },
+        "stats": {
+          "$ref": "#/definitions/logistics.simulation.v1.FailureStats",
+          "title": "Агрегированная статистика"
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.ResilienceRecommendation"
+          },
+          "title": "Рекомендации по повышению устойчивости"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulatePeakLoadResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "normalResult": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "peakResult": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioResult"
+        },
+        "comparison": {
+          "$ref": "#/definitions/logistics.simulation.v1.ScenarioComparison"
+        },
+        "overloadedEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.OverloadedEdge"
+          },
+          "title": "Рёбра, которые не справились"
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Рекомендации"
+        },
+        "metadata": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationMetadata"
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulationMetadata": {
+      "type": "object",
+      "properties": {
+        "simulationId": {
+          "type": "string"
+        },
+        "computationTimeMs": {
+          "type": "number",
+          "format": "double"
+        },
+        "iterations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "memoryUsedBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "algorithmUsed": {
+          "type": "string"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulationRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationType"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requestData": {
+          "type": "string",
+          "format": "byte"
+        },
+        "responseData": {
+          "type": "string",
+          "format": "byte"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulationSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.SimulationType"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.SimulationType": {
+      "type": "string",
+      "enum": [
+        "SIMULATION_TYPE_UNSPECIFIED",
+        "SIMULATION_TYPE_WHAT_IF",
+        "SIMULATION_TYPE_TIME",
+        "SIMULATION_TYPE_MONTE_CARLO",
+        "SIMULATION_TYPE_SENSITIVITY",
+        "SIMULATION_TYPE_FAILURE",
+        "SIMULATION_TYPE_RESILIENCE"
+      ],
+      "default": "SIMULATION_TYPE_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.ThresholdPoint": {
+      "type": "object",
+      "properties": {
+        "parameterId": {
+          "type": "string"
+        },
+        "thresholdValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.ThresholdType"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.simulation.v1.ThresholdType": {
+      "type": "string",
+      "enum": [
+        "THRESHOLD_TYPE_UNSPECIFIED",
+        "THRESHOLD_TYPE_FLOW_DROPS",
+        "THRESHOLD_TYPE_COST_SPIKES",
+        "THRESHOLD_TYPE_BOTTLENECK_APPEARS",
+        "THRESHOLD_TYPE_INFEASIBLE"
+      ],
+      "default": "THRESHOLD_TYPE_UNSPECIFIED",
+      "title": "- THRESHOLD_TYPE_FLOW_DROPS: Поток резко падает\n - THRESHOLD_TYPE_COST_SPIKES: Стоимость резко растёт\n - THRESHOLD_TYPE_INFEASIBLE: Задача становится неразрешимой"
+    },
+    "logistics.simulation.v1.TimePattern": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.PatternType"
+        },
+        "hourlyMultipliers": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "24 значения для часов",
+          "title": "Для периодических паттернов"
+        },
+        "dailyMultipliers": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "title": "7 значений для дней недели"
+        },
+        "customPoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.simulation.v1.TimePoint"
+          },
+          "title": "Для кастомных паттернов"
+        },
+        "mean": {
+          "type": "number",
+          "format": "double",
+          "title": "Для стохастических паттернов"
+        },
+        "stdDev": {
+          "type": "number",
+          "format": "double"
+        },
+        "minValue": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxValue": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.simulation.v1.TimePoint": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Номер шага"
+        },
+        "multiplier": {
+          "type": "number",
+          "format": "double",
+          "title": "Множитель к базовому значению"
+        }
+      }
+    },
+    "logistics.simulation.v1.TimeSimulationConfig": {
+      "type": "object",
+      "properties": {
+        "startTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Период симуляции"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timeStep": {
+          "$ref": "#/definitions/logistics.simulation.v1.TimeStep",
+          "title": "Шаг симуляции"
+        },
+        "numSteps": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Количество шагов (альтернатива end_time)"
+        }
+      }
+    },
+    "logistics.simulation.v1.TimeSimulationStats": {
+      "type": "object",
+      "properties": {
+        "minFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "avgFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "stdDevFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "minCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "avgCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalSteps": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "stepsWithBottlenecks": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "logistics.simulation.v1.TimeStep": {
+      "type": "string",
+      "enum": [
+        "TIME_STEP_UNSPECIFIED",
+        "TIME_STEP_MINUTE",
+        "TIME_STEP_HOUR",
+        "TIME_STEP_DAY",
+        "TIME_STEP_WEEK"
+      ],
+      "default": "TIME_STEP_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.TimeStepResult": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "averageUtilization": {
+          "type": "number",
+          "format": "double"
+        },
+        "saturatedEdges": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "bottlenecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.common.v1.EdgeKey"
+          }
+        }
+      }
+    },
+    "logistics.simulation.v1.UncertaintySpec": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/logistics.simulation.v1.UncertaintyType"
+        },
+        "edge": {
+          "$ref": "#/definitions/logistics.common.v1.EdgeKey",
+          "title": "Для edge uncertainties"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64",
+          "title": "Для node uncertainties"
+        },
+        "target": {
+          "$ref": "#/definitions/logistics.simulation.v1.ModificationTarget",
+          "title": "Какой параметр"
+        },
+        "distribution": {
+          "$ref": "#/definitions/logistics.simulation.v1.Distribution",
+          "title": "Распределение"
+        }
+      }
+    },
+    "logistics.simulation.v1.UncertaintyType": {
+      "type": "string",
+      "enum": [
+        "UNCERTAINTY_TYPE_UNSPECIFIED",
+        "UNCERTAINTY_TYPE_EDGE",
+        "UNCERTAINTY_TYPE_NODE",
+        "UNCERTAINTY_TYPE_GLOBAL"
+      ],
+      "default": "UNCERTAINTY_TYPE_UNSPECIFIED",
+      "title": "- UNCERTAINTY_TYPE_GLOBAL: Применяется ко всем"
+    },
+    "logistics.simulation.v1.WeaknessType": {
+      "type": "string",
+      "enum": [
+        "WEAKNESS_TYPE_UNSPECIFIED",
+        "WEAKNESS_TYPE_SINGLE_POINT_OF_FAILURE",
+        "WEAKNESS_TYPE_CAPACITY_BOTTLENECK",
+        "WEAKNESS_TYPE_NO_REDUNDANCY",
+        "WEAKNESS_TYPE_GEOGRAPHIC_CONCENTRATION"
+      ],
+      "default": "WEAKNESS_TYPE_UNSPECIFIED"
+    },
+    "logistics.simulation.v1.WhatIfOptions": {
+      "type": "object",
+      "properties": {
+        "compareWithBaseline": {
+          "type": "boolean"
+        },
+        "calculateCostImpact": {
+          "type": "boolean"
+        },
+        "findNewBottlenecks": {
+          "type": "boolean"
+        },
+        "returnModifiedGraph": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logistics.validation.v1.AlgorithmComplexity": {
+      "type": "object",
+      "properties": {
+        "timeComplexity": {
+          "type": "string"
+        },
+        "spaceComplexity": {
+          "type": "string"
+        },
+        "estimatedIterations": {
+          "type": "string",
+          "format": "int64"
+        },
+        "recommendation": {
+          "type": "string"
+        }
+      }
+    },
+    "logistics.validation.v1.FlowSummary": {
+      "type": "object",
+      "properties": {
+        "totalFlow": {
+          "type": "number",
+          "format": "double"
+        },
+        "totalCost": {
+          "type": "number",
+          "format": "double"
+        },
+        "edgesWithFlow": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "saturatedEdges": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sourceOutflow": {
+          "type": "number",
+          "format": "double"
+        },
+        "sinkInflow": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.validation.v1.FlowViolation": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "edgeFrom": {
+          "type": "string",
+          "format": "int64"
+        },
+        "edgeTo": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expected": {
+          "type": "number",
+          "format": "double"
+        },
+        "actual": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "logistics.validation.v1.HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "logistics.validation.v1.ValidateAllResponse": {
+      "type": "object",
+      "properties": {
+        "isValid": {
+          "type": "boolean"
+        },
+        "graphValidation": {
+          "$ref": "#/definitions/logistics.validation.v1.ValidateGraphResponse"
+        },
+        "flowValidation": {
+          "$ref": "#/definitions/logistics.validation.v1.ValidateFlowResponse"
+        },
+        "algorithmValidation": {
+          "$ref": "#/definitions/logistics.validation.v1.ValidateForAlgorithmResponse"
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.validation.v1.ValidationMetrics"
+        }
+      }
+    },
+    "logistics.validation.v1.ValidateFlowResponse": {
+      "type": "object",
+      "properties": {
+        "isValid": {
+          "type": "boolean"
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/logistics.validation.v1.FlowViolation"
+          }
+        },
+        "summary": {
+          "$ref": "#/definitions/logistics.validation.v1.FlowSummary"
+        }
+      }
+    },
+    "logistics.validation.v1.ValidateForAlgorithmResponse": {
+      "type": "object",
+      "properties": {
+        "isCompatible": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "complexity": {
+          "$ref": "#/definitions/logistics.validation.v1.AlgorithmComplexity"
+        }
+      }
+    },
+    "logistics.validation.v1.ValidateGraphResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/logistics.common.v1.ValidationResult"
+        },
+        "statistics": {
+          "$ref": "#/definitions/logistics.common.v1.GraphStatistics"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metrics": {
+          "$ref": "#/definitions/logistics.validation.v1.ValidationMetrics"
+        }
+      }
+    },
+    "logistics.validation.v1.ValidationLevel": {
+      "type": "string",
+      "enum": [
+        "VALIDATION_LEVEL_UNSPECIFIED",
+        "VALIDATION_LEVEL_BASIC",
+        "VALIDATION_LEVEL_STANDARD",
+        "VALIDATION_LEVEL_STRICT",
+        "VALIDATION_LEVEL_FULL"
+      ],
+      "default": "VALIDATION_LEVEL_UNSPECIFIED",
+      "title": "- VALIDATION_LEVEL_BASIC: Только структура\n - VALIDATION_LEVEL_STANDARD: + связность\n - VALIDATION_LEVEL_STRICT: + бизнес-правила\n - VALIDATION_LEVEL_FULL: Всё включая топологию"
+    },
+    "logistics.validation.v1.ValidationMetrics": {
+      "type": "object",
+      "properties": {
+        "totalChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "passedChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "warningChecks": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "durationMs": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    }
+  }
+}

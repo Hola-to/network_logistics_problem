@@ -1,0 +1,121 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    # Базовые (must-have)
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+
+    # Стиль
+    - revive
+    - misspell
+    - unconvert
+
+    # Качество и сложность
+    - bodyclose
+    - noctx
+    - gocognit
+    - prealloc
+    - goconst
+
+    # Безопасность и расширенный анализ
+    - gosec
+    - gocritic
+
+    # Работа с ошибками (Go 1.13+)
+    - errorlint
+    - nilerr
+
+    # Полнота
+    - exhaustive
+
+  settings:
+    gocognit:
+      min-complexity: 30
+
+    dupl:
+      threshold: 100
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+        - name: package-comments
+          disabled: true
+        - name: error-naming
+        - name: error-strings
+        - name: error-return
+        - name: if-return
+        - name: var-naming
+        - name: var-declaration
+
+    gosec:
+      excludes:
+        - G104 # Unhandled errors (errcheck уже проверяет)
+        - G404 # Weak random (для тестов OK)
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - whyNoLint
+        - wrapperFunc
+        - hugeParam # Часто ложные срабатывания
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    paths:
+      - gen
+      - api
+      - deploy
+      - vendor
+      - ".*\\.pb\\.go$"
+      - ".*\\.connect\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - gosec
+          - goconst
+          - gocognit
+          - errcheck
+          - exhaustive
+
+      - path: cmd/
+        linters:
+          - forbidigo
+
+      - path: migrations/
+        linters:
+          - dupl
+
+      - path: tests/
+        linters:
+          - errcheck
+          - gosec
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5

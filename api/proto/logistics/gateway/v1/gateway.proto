@@ -1,0 +1,1204 @@
+syntax = "proto3";
+
+package logistics.gateway.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "logistics/common/v1/common.proto";
+
+option go_package = "logistics/gen/go/logistics/gateway/v1;gatewayv1";
+
+// ============================================================================
+// Gateway Service - Unified API Entry Point
+// ============================================================================
+
+service GatewayService {
+  // ==================== Health & Service Info ====================
+  rpc Health(google.protobuf.Empty) returns (HealthResponse);
+  rpc ReadinessCheck(google.protobuf.Empty) returns (ReadinessResponse);
+  rpc Info(google.protobuf.Empty) returns (InfoResponse);
+  rpc GetAlgorithms(google.protobuf.Empty) returns (AlgorithmsResponse);
+
+  // ==================== Authentication ====================
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+  rpc Logout(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc GetProfile(google.protobuf.Empty) returns (UserProfile);
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // ==================== Graph Optimization ====================
+  rpc CalculateLogistics(CalculateLogisticsRequest) returns (CalculateLogisticsResponse);
+  rpc SolveGraph(SolveGraphRequest) returns (SolveGraphResponse);
+  rpc SolveGraphStream(SolveGraphRequest) returns (stream SolveProgressEvent);
+  rpc BatchSolve(BatchSolveRequest) returns (BatchSolveResponse);
+
+  // ==================== Validation ====================
+  rpc ValidateGraph(ValidateGraphRequest) returns (ValidateGraphResponse);
+  rpc ValidateForAlgorithm(ValidateForAlgorithmRequest) returns (ValidateForAlgorithmResponse);
+
+  // ==================== Analytics ====================
+  rpc AnalyzeGraph(AnalyzeGraphRequest) returns (AnalyzeGraphResponse);
+  rpc CalculateCost(CalculateCostRequest) returns (CalculateCostResponse);
+  rpc GetBottlenecks(BottlenecksRequest) returns (BottlenecksResponse);
+  rpc CompareScenarios(CompareScenariosRequest) returns (CompareScenariosResponse);
+
+  // ==================== Simulation ====================
+  rpc RunWhatIf(WhatIfRequest) returns (WhatIfResponse);
+  rpc RunMonteCarlo(MonteCarloRequest) returns (MonteCarloResponse);
+  rpc RunMonteCarloStream(MonteCarloRequest) returns (stream MonteCarloProgressEvent);
+  rpc AnalyzeSensitivity(SensitivityRequest) returns (SensitivityResponse);
+  rpc AnalyzeResilience(ResilienceRequest) returns (ResilienceResponse);
+  rpc SimulateFailures(FailureSimulationRequest) returns (FailureSimulationResponse);
+  rpc FindCriticalElements(CriticalElementsRequest) returns (CriticalElementsResponse);
+  rpc GetSimulation(GetSimulationRequest) returns (SimulationRecord);
+  rpc ListSimulations(ListSimulationsRequest) returns (ListSimulationsResponse);
+  rpc DeleteSimulation(DeleteSimulationRequest) returns (google.protobuf.Empty);
+
+  // ==================== History ====================
+  rpc SaveCalculation(SaveCalculationRequest) returns (SaveCalculationResponse);
+  rpc GetCalculation(GetCalculationRequest) returns (CalculationRecord);
+  rpc ListCalculations(ListCalculationsRequest) returns (ListCalculationsResponse);
+  rpc DeleteCalculation(DeleteCalculationRequest) returns (google.protobuf.Empty);
+  rpc GetStatistics(GetStatisticsRequest) returns (StatisticsResponse);
+
+  // ==================== Reports ====================
+  rpc GenerateReport(GenerateReportRequest) returns (GenerateReportResponse);
+  rpc GetReport(GetReportRequest) returns (ReportRecord);
+  rpc DownloadReport(DownloadReportRequest) returns (stream ReportChunk);
+  rpc ListReports(ListReportsRequest) returns (ListReportsResponse);
+  rpc DeleteReport(DeleteReportRequest) returns (google.protobuf.Empty);
+  rpc GetReportFormats(google.protobuf.Empty) returns (ReportFormatsResponse);
+
+  // ==================== Audit (Admin only) ====================
+  rpc GetAuditLogs(GetAuditLogsRequest) returns (AuditLogsResponse);
+  rpc GetUserActivity(GetUserActivityRequest) returns (UserActivityResponse);
+  rpc GetAuditStats(GetAuditStatsRequest) returns (AuditStatsResponse);
+}
+
+// ============================================================================
+// Health & Info Messages
+// ============================================================================
+
+message HealthResponse {
+  string status = 1; // HEALTHY, DEGRADED, UNHEALTHY
+  google.protobuf.Timestamp timestamp = 2;
+  map<string, ServiceHealth> services = 3;
+}
+
+message ServiceHealth {
+  string name = 1;
+  string status = 2;
+  string address = 3;
+  int64 latency_ms = 4;
+  string error = 5;
+  string version = 6;
+}
+
+message ReadinessResponse {
+  bool ready = 1;
+  map<string, bool> dependencies = 2;
+}
+
+message InfoResponse {
+  string name = 1;
+  string version = 2;
+  string environment = 3;
+  google.protobuf.Timestamp started_at = 4;
+  int64 uptime_seconds = 5;
+  repeated string features = 6;
+  RateLimitInfo rate_limit = 7;
+  map<string, string> build_info = 8;
+}
+
+message RateLimitInfo {
+  bool enabled = 1;
+  int32 requests_per_minute = 2;
+  int32 burst_size = 3;
+}
+
+message AlgorithmsResponse {
+  repeated AlgorithmInfo algorithms = 1;
+}
+
+message AlgorithmInfo {
+  logistics.common.v1.Algorithm algorithm = 1;
+  string name = 2;
+  string description = 3;
+  string time_complexity = 4;
+  string space_complexity = 5;
+  bool supports_min_cost = 6;
+  bool supports_negative_costs = 7;
+  repeated string best_for = 8;
+}
+
+// ============================================================================
+// Authentication Messages
+// ============================================================================
+
+message RegisterRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+  string full_name = 4;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool valid = 1;
+  string user_id = 2;
+  int64 expires_at = 3;
+}
+
+message AuthResponse {
+  bool success = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 expires_in = 4;
+  UserProfile user = 5;
+  string error_message = 6;
+}
+
+message UserProfile {
+  string user_id = 1;
+  string username = 2;
+  string email = 3;
+  string full_name = 4;
+  string role = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_login = 7;
+}
+
+// ============================================================================
+// Optimization Messages
+// ============================================================================
+
+message CalculateLogisticsRequest {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+
+  // Validation options
+  bool skip_validation = 3;
+  ValidationLevel validation_level = 4;
+
+  // Solve options
+  SolveOptions solve_options = 5;
+
+  // Analytics flags
+  bool calculate_cost = 6;
+  bool find_bottlenecks = 7;
+  bool calculate_statistics = 8;
+  bool suggest_improvements = 9;
+
+  // Analytics options
+  CostOptions cost_options = 10;
+  double bottleneck_threshold = 11;
+
+  // Save options
+  bool save_to_history = 12;
+  string calculation_name = 13;
+  map<string, string> tags = 14;
+
+  // Report options
+  bool generate_report = 15;
+  ReportFormat report_format = 16;
+  ReportOptions report_options = 17;
+}
+
+message CalculateLogisticsResponse {
+  bool success = 1;
+
+  // Results
+  ValidationResult validation = 2;
+  SolveResult optimization = 3;
+  AnalyticsResult analytics = 4;
+  ReportInfo report = 5;
+
+  // Saved calculation ID
+  string calculation_id = 6;
+
+  // Metadata
+  RequestMetadata metadata = 7;
+
+  // Errors & Warnings
+  repeated logistics.common.v1.ErrorDetail errors = 8;
+  repeated string warnings = 9;
+}
+
+message SolveGraphRequest {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+  SolveOptions options = 3;
+}
+
+message SolveGraphResponse {
+  bool success = 1;
+  logistics.common.v1.FlowResult result = 2;
+  logistics.common.v1.Graph solved_graph = 3;
+  SolveMetrics metrics = 4;
+  string error_message = 5;
+}
+
+message SolveProgressEvent {
+  int32 iteration = 1;
+  double current_flow = 2;
+  double progress_percent = 3;
+  string status = 4; // "running", "completed", "error"
+  logistics.common.v1.Path last_path = 5;
+  double computation_time_ms = 6;
+  int64 memory_used_bytes = 7;
+
+  // Final result (only in last event)
+  bool is_final = 8;
+  SolveGraphResponse final_result = 9;
+}
+
+message BatchSolveRequest {
+  repeated BatchSolveItem items = 1;
+  logistics.common.v1.Algorithm default_algorithm = 2;
+  bool parallel = 3;
+  int32 max_concurrent = 4;
+}
+
+message BatchSolveItem {
+  string id = 1;
+  logistics.common.v1.Graph graph = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+}
+
+message BatchSolveResponse {
+  repeated BatchSolveResult results = 1;
+  double total_time_ms = 2;
+  int32 successful = 3;
+  int32 failed = 4;
+}
+
+message BatchSolveResult {
+  string id = 1;
+  bool success = 2;
+  double max_flow = 3;
+  double total_cost = 4;
+  double computation_time_ms = 5;
+  string error_message = 6;
+}
+
+message SolveOptions {
+  double timeout_seconds = 1;
+  bool return_paths = 2;
+  int32 max_iterations = 3;
+  double epsilon = 4;
+}
+
+message SolveMetrics {
+  double computation_time_ms = 1;
+  int32 iterations = 2;
+  int32 augmenting_paths_found = 3;
+  int64 memory_used_bytes = 4;
+}
+
+// ============================================================================
+// Validation Messages
+// ============================================================================
+
+enum ValidationLevel {
+  VALIDATION_LEVEL_UNSPECIFIED = 0;
+  VALIDATION_LEVEL_BASIC = 1;
+  VALIDATION_LEVEL_STANDARD = 2;
+  VALIDATION_LEVEL_STRICT = 3;
+  VALIDATION_LEVEL_FULL = 4;
+}
+
+message ValidateGraphRequest {
+  logistics.common.v1.Graph graph = 1;
+  ValidationLevel level = 2;
+  bool check_connectivity = 3;
+  bool check_business_rules = 4;
+  bool check_topology = 5;
+}
+
+message ValidateGraphResponse {
+  bool is_valid = 1;
+  repeated logistics.common.v1.ValidationError errors = 2;
+  repeated string warnings = 3;
+  logistics.common.v1.GraphStatistics statistics = 4;
+  ValidationMetrics metrics = 5;
+}
+
+message ValidateForAlgorithmRequest {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+}
+
+message ValidateForAlgorithmResponse {
+  bool is_compatible = 1;
+  repeated string issues = 2;
+  repeated string recommendations = 3;
+  AlgorithmComplexityEstimate complexity = 4;
+}
+
+message AlgorithmComplexityEstimate {
+  string time_complexity = 1;
+  string space_complexity = 2;
+  int64 estimated_iterations = 3;
+  double estimated_time_ms = 4;
+  string recommendation = 5;
+}
+
+message ValidationResult {
+  bool is_valid = 1;
+  int32 errors_count = 2;
+  int32 warnings_count = 3;
+  repeated logistics.common.v1.ValidationError errors = 4;
+  repeated string warnings = 5;
+  logistics.common.v1.GraphStatistics graph_stats = 6;
+}
+
+message ValidationMetrics {
+  int32 total_checks = 1;
+  int32 passed_checks = 2;
+  int32 failed_checks = 3;
+  double duration_ms = 4;
+}
+
+// ============================================================================
+// Analytics Messages
+// ============================================================================
+
+message AnalyzeGraphRequest {
+  logistics.common.v1.Graph graph = 1;
+  AnalysisOptions options = 2;
+}
+
+message AnalyzeGraphResponse {
+  logistics.common.v1.FlowStatistics flow_stats = 1;
+  logistics.common.v1.GraphStatistics graph_stats = 2;
+  CostAnalysis cost = 3;
+  BottleneckAnalysis bottlenecks = 4;
+  EfficiencyReport efficiency = 5;
+}
+
+message AnalysisOptions {
+  bool analyze_costs = 1;
+  bool find_bottlenecks = 2;
+  bool calculate_statistics = 3;
+  bool suggest_improvements = 4;
+  double bottleneck_threshold = 5;
+  CostOptions cost_options = 6;
+}
+
+message CalculateCostRequest {
+  logistics.common.v1.Graph graph = 1;
+  CostOptions options = 2;
+}
+
+message CalculateCostResponse {
+  double total_cost = 1;
+  string currency = 2;
+  CostBreakdown breakdown = 3;
+}
+
+message CostOptions {
+  string currency = 1;
+  bool include_fixed_costs = 2;
+  map<string, double> cost_multipliers = 3;
+  double discount_percent = 4;
+  double markup_percent = 5;
+}
+
+message CostBreakdown {
+  double transport_cost = 1;
+  double fixed_cost = 2;
+  double handling_cost = 3;
+  double discount_amount = 4;
+  double markup_amount = 5;
+  map<string, double> cost_by_road_type = 6;
+  map<string, double> cost_by_node_type = 7;
+}
+
+message CostAnalysis {
+  double total_cost = 1;
+  string currency = 2;
+  CostBreakdown breakdown = 3;
+}
+
+message BottlenecksRequest {
+  logistics.common.v1.Graph graph = 1;
+  double utilization_threshold = 2;
+  int32 top_n = 3;
+}
+
+message BottlenecksResponse {
+  repeated Bottleneck bottlenecks = 1;
+  repeated Recommendation recommendations = 2;
+}
+
+message Bottleneck {
+  logistics.common.v1.EdgeKey edge = 1;
+  double utilization = 2;
+  double impact_score = 3;
+  BottleneckSeverity severity = 4;
+}
+
+enum BottleneckSeverity {
+  BOTTLENECK_SEVERITY_UNSPECIFIED = 0;
+  BOTTLENECK_SEVERITY_LOW = 1;
+  BOTTLENECK_SEVERITY_MEDIUM = 2;
+  BOTTLENECK_SEVERITY_HIGH = 3;
+  BOTTLENECK_SEVERITY_CRITICAL = 4;
+}
+
+message Recommendation {
+  string type = 1;
+  string description = 2;
+  logistics.common.v1.EdgeKey affected_edge = 3;
+  double estimated_improvement = 4;
+  double estimated_cost = 5;
+}
+
+message BottleneckAnalysis {
+  repeated Bottleneck bottlenecks = 1;
+  repeated Recommendation recommendations = 2;
+  int32 total_bottlenecks = 3;
+}
+
+message EfficiencyReport {
+  double overall_efficiency = 1;
+  double capacity_utilization = 2;
+  int32 unused_edges_count = 3;
+  int32 saturated_edges_count = 4;
+  string grade = 5;
+}
+
+message CompareScenariosRequest {
+  logistics.common.v1.Graph baseline = 1;
+  repeated ScenarioInput scenarios = 2;
+}
+
+message ScenarioInput {
+  string name = 1;
+  logistics.common.v1.Graph graph = 2;
+}
+
+message CompareScenariosResponse {
+  ScenarioResult baseline = 1;
+  repeated ScenarioResult scenarios = 2;
+  string best_scenario = 3;
+  string recommendation = 4;
+}
+
+message ScenarioResult {
+  string name = 1;
+  double max_flow = 2;
+  double total_cost = 3;
+  double efficiency = 4;
+  double improvement_vs_baseline = 5;
+}
+
+message AnalyticsResult {
+  double total_cost = 1;
+  string currency = 2;
+  CostBreakdown cost_breakdown = 3;
+  repeated Bottleneck bottlenecks = 4;
+  int32 bottlenecks_count = 5;
+  repeated Recommendation recommendations = 6;
+  EfficiencyReport efficiency = 7;
+  logistics.common.v1.FlowStatistics flow_stats = 8;
+}
+
+message SolveResult {
+  logistics.common.v1.Graph solved_graph = 1;
+  double max_flow = 2;
+  double total_cost = 3;
+  logistics.common.v1.FlowStatus status = 4;
+  int32 iterations = 5;
+  double computation_time_ms = 6;
+  int32 paths_found = 7;
+  repeated logistics.common.v1.Path paths = 8;
+}
+
+// ============================================================================
+// Simulation Messages
+// ============================================================================
+
+message WhatIfRequest {
+  logistics.common.v1.Graph baseline_graph = 1;
+  repeated Modification modifications = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+  WhatIfOptions options = 4;
+}
+
+message Modification {
+  ModificationType type = 1;
+  logistics.common.v1.EdgeKey edge_key = 2;
+  int64 node_id = 3;
+  ModificationTarget target = 4;
+  double value = 5;
+  bool is_relative = 6; // true = multiply, false = set absolute
+  string description = 7;
+}
+
+enum ModificationType {
+  MODIFICATION_TYPE_UNSPECIFIED = 0;
+  MODIFICATION_TYPE_UPDATE_EDGE = 1;
+  MODIFICATION_TYPE_REMOVE_EDGE = 2;
+  MODIFICATION_TYPE_ADD_EDGE = 3;
+  MODIFICATION_TYPE_UPDATE_NODE = 4;
+  MODIFICATION_TYPE_REMOVE_NODE = 5;
+}
+
+enum ModificationTarget {
+  MODIFICATION_TARGET_UNSPECIFIED = 0;
+  MODIFICATION_TARGET_CAPACITY = 1;
+  MODIFICATION_TARGET_COST = 2;
+  MODIFICATION_TARGET_LENGTH = 3;
+}
+
+message WhatIfOptions {
+  bool compare_with_baseline = 1;
+  bool calculate_cost_impact = 2;
+  bool find_new_bottlenecks = 3;
+  bool return_modified_graph = 4;
+}
+
+message WhatIfResponse {
+  bool success = 1;
+  ScenarioResult baseline = 2;
+  ScenarioResult modified = 3;
+  ScenarioComparison comparison = 4;
+  logistics.common.v1.Graph modified_graph = 5;
+  SimulationMetadata metadata = 6;
+  string error_message = 7;
+}
+
+message ScenarioComparison {
+  double flow_change = 1;
+  double flow_change_percent = 2;
+  double cost_change = 3;
+  double cost_change_percent = 4;
+  string impact_summary = 5;
+  ImpactLevel impact_level = 6;
+}
+
+enum ImpactLevel {
+  IMPACT_LEVEL_UNSPECIFIED = 0;
+  IMPACT_LEVEL_NONE = 1;
+  IMPACT_LEVEL_LOW = 2;
+  IMPACT_LEVEL_MEDIUM = 3;
+  IMPACT_LEVEL_HIGH = 4;
+  IMPACT_LEVEL_CRITICAL = 5;
+}
+
+message MonteCarloRequest {
+  logistics.common.v1.Graph graph = 1;
+  MonteCarloConfig config = 2;
+  repeated UncertaintySpec uncertainties = 3;
+  logistics.common.v1.Algorithm algorithm = 4;
+}
+
+message MonteCarloConfig {
+  int32 num_iterations = 1;
+  int64 random_seed = 2;
+  double confidence_level = 3;
+  bool parallel = 4;
+}
+
+message UncertaintySpec {
+  logistics.common.v1.EdgeKey edge = 1;
+  int64 node_id = 2;
+  ModificationTarget target = 3;
+  Distribution distribution = 4;
+}
+
+message Distribution {
+  DistributionType type = 1;
+  double param1 = 2; // mean for Normal, min for Uniform
+  double param2 = 3; // std_dev for Normal, max for Uniform
+  double param3 = 4; // mode for Triangular
+}
+
+enum DistributionType {
+  DISTRIBUTION_TYPE_UNSPECIFIED = 0;
+  DISTRIBUTION_TYPE_NORMAL = 1;
+  DISTRIBUTION_TYPE_UNIFORM = 2;
+  DISTRIBUTION_TYPE_TRIANGULAR = 3;
+}
+
+message MonteCarloResponse {
+  bool success = 1;
+  MonteCarloStats flow_stats = 2;
+  MonteCarloStats cost_stats = 3;
+  RiskAnalysis risk_analysis = 4;
+  SimulationMetadata metadata = 5;
+  string error_message = 6;
+}
+
+message MonteCarloStats {
+  double mean = 1;
+  double std_dev = 2;
+  double min = 3;
+  double max = 4;
+  double median = 5;
+  double confidence_interval_low = 6;
+  double confidence_interval_high = 7;
+}
+
+message RiskAnalysis {
+  double probability_below_threshold = 1;
+  double value_at_risk = 2;
+  double worst_case_flow = 3;
+  double best_case_flow = 4;
+}
+
+message MonteCarloProgressEvent {
+  int32 iteration = 1;
+  int32 total_iterations = 2;
+  double progress_percent = 3;
+  double current_mean_flow = 4;
+  double current_std_dev = 5;
+  string status = 6;
+  bool is_final = 7;
+  MonteCarloResponse final_result = 8;
+}
+
+message SensitivityRequest {
+  logistics.common.v1.Graph graph = 1;
+  repeated SensitivityParameter parameters = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+}
+
+message SensitivityParameter {
+  logistics.common.v1.EdgeKey edge = 1;
+  int64 node_id = 2;
+  ModificationTarget target = 3;
+  double min_multiplier = 4;
+  double max_multiplier = 5;
+  int32 num_steps = 6;
+}
+
+message SensitivityResponse {
+  bool success = 1;
+  repeated SensitivityResult results = 2;
+  repeated ParameterRanking rankings = 3;
+  SimulationMetadata metadata = 4;
+  string error_message = 5;
+}
+
+message SensitivityResult {
+  string parameter_id = 1;
+  repeated SensitivityPoint curve = 2;
+  double elasticity = 3;
+  double sensitivity_index = 4;
+}
+
+message SensitivityPoint {
+  double parameter_value = 1;
+  double flow_value = 2;
+  double cost_value = 3;
+}
+
+message ParameterRanking {
+  string parameter_id = 1;
+  int32 rank = 2;
+  double sensitivity_index = 3;
+  string description = 4;
+}
+
+message ResilienceRequest {
+  logistics.common.v1.Graph graph = 1;
+  ResilienceConfig config = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+}
+
+message ResilienceConfig {
+  int32 max_failures_to_test = 1;
+  bool test_cascading_failures = 2;
+  double load_factor = 3;
+}
+
+message ResilienceResponse {
+  bool success = 1;
+  ResilienceMetrics metrics = 2;
+  repeated ResilienceWeakness weaknesses = 3;
+  SimulationMetadata metadata = 4;
+  string error_message = 5;
+}
+
+message ResilienceMetrics {
+  double overall_score = 1;
+  double connectivity_robustness = 2;
+  double flow_robustness = 3;
+  double redundancy_level = 4;
+  int32 min_cut_size = 5;
+}
+
+message ResilienceWeakness {
+  string description = 1;
+  string type = 2;
+  double severity = 3;
+  repeated logistics.common.v1.EdgeKey affected_edges = 4;
+  string mitigation_suggestion = 5;
+}
+
+message FailureSimulationRequest {
+  logistics.common.v1.Graph graph = 1;
+  repeated FailureScenario scenarios = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+}
+
+message FailureScenario {
+  string name = 1;
+  repeated logistics.common.v1.EdgeKey failed_edges = 2;
+  repeated int64 failed_nodes = 3;
+  double probability = 4;
+}
+
+message FailureSimulationResponse {
+  bool success = 1;
+  ScenarioResult baseline = 2;
+  repeated FailureScenarioResult scenario_results = 3;
+  FailureStats stats = 4;
+  SimulationMetadata metadata = 5;
+  string error_message = 6;
+}
+
+message FailureScenarioResult {
+  string scenario_name = 1;
+  double probability = 2;
+  ScenarioResult result = 3;
+  ScenarioComparison vs_baseline = 4;
+  bool network_disconnected = 5;
+}
+
+message FailureStats {
+  double expected_flow_loss = 1;
+  double max_flow_loss = 2;
+  double probability_of_disconnection = 3;
+}
+
+message CriticalElementsRequest {
+  logistics.common.v1.Graph graph = 1;
+  CriticalElementsConfig config = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+}
+
+message CriticalElementsConfig {
+  bool analyze_edges = 1;
+  bool analyze_nodes = 2;
+  int32 top_n = 3;
+  double failure_threshold = 4;
+}
+
+message CriticalElementsResponse {
+  bool success = 1;
+  repeated CriticalEdge critical_edges = 2;
+  repeated CriticalNode critical_nodes = 3;
+  repeated logistics.common.v1.EdgeKey single_points_of_failure = 4;
+  double resilience_score = 5;
+  SimulationMetadata metadata = 6;
+  string error_message = 7;
+}
+
+message CriticalEdge {
+  logistics.common.v1.EdgeKey edge = 1;
+  double criticality_score = 2;
+  double flow_impact_if_removed = 3;
+  int32 rank = 4;
+  bool is_single_point_of_failure = 5;
+}
+
+message CriticalNode {
+  int64 node_id = 1;
+  double criticality_score = 2;
+  double flow_impact_if_removed = 3;
+  int32 affected_edges = 4;
+  int32 rank = 5;
+}
+
+message SimulationMetadata {
+  string simulation_id = 1;
+  double computation_time_ms = 2;
+  int32 iterations = 3;
+  int64 memory_used_bytes = 4;
+  string algorithm_used = 5;
+  google.protobuf.Timestamp completed_at = 6;
+}
+
+message GetSimulationRequest {
+  string simulation_id = 1;
+}
+
+message ListSimulationsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  string simulation_type = 3;
+}
+
+message ListSimulationsResponse {
+  repeated SimulationRecord simulations = 1;
+  int64 total_count = 2;
+  bool has_more = 3;
+}
+
+message SimulationRecord {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  google.protobuf.Timestamp created_at = 4;
+  map<string, string> tags = 5;
+  bytes result_data = 6;
+}
+
+message DeleteSimulationRequest {
+  string simulation_id = 1;
+}
+
+// ============================================================================
+// History Messages
+// ============================================================================
+
+message SaveCalculationRequest {
+  string name = 1;
+  logistics.common.v1.Graph graph = 2;
+  SolveGraphResponse result = 3;
+  map<string, string> tags = 4;
+}
+
+message SaveCalculationResponse {
+  string calculation_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+message GetCalculationRequest {
+  string calculation_id = 1;
+}
+
+message ListCalculationsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  logistics.common.v1.Algorithm algorithm = 3;
+  repeated string tags = 4;
+  google.protobuf.Timestamp created_after = 5;
+  google.protobuf.Timestamp created_before = 6;
+  string sort_by = 7;
+  bool sort_desc = 8;
+}
+
+message ListCalculationsResponse {
+  repeated CalculationSummary calculations = 1;
+  int64 total_count = 2;
+  bool has_more = 3;
+}
+
+message CalculationRecord {
+  string calculation_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+  logistics.common.v1.Graph graph = 4;
+  SolveGraphResponse result = 5;
+  map<string, string> tags = 6;
+}
+
+message CalculationSummary {
+  string calculation_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+  double max_flow = 4;
+  double total_cost = 5;
+  logistics.common.v1.Algorithm algorithm = 6;
+  double computation_time_ms = 7;
+  int32 node_count = 8;
+  int32 edge_count = 9;
+  repeated string tags = 10;
+}
+
+message DeleteCalculationRequest {
+  string calculation_id = 1;
+}
+
+message GetStatisticsRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+}
+
+message StatisticsResponse {
+  int32 total_calculations = 1;
+  double average_max_flow = 2;
+  double average_cost = 3;
+  double average_computation_time_ms = 4;
+  map<string, int32> calculations_by_algorithm = 5;
+  repeated DailyStats daily_stats = 6;
+}
+
+message DailyStats {
+  string date = 1;
+  int32 count = 2;
+  double total_flow = 3;
+}
+
+// ============================================================================
+// Report Messages
+// ============================================================================
+
+enum ReportFormat {
+  REPORT_FORMAT_UNSPECIFIED = 0;
+  REPORT_FORMAT_MARKDOWN = 1;
+  REPORT_FORMAT_CSV = 2;
+  REPORT_FORMAT_EXCEL = 3;
+  REPORT_FORMAT_PDF = 4;
+  REPORT_FORMAT_HTML = 5;
+  REPORT_FORMAT_JSON = 6;
+}
+
+enum ReportType {
+  REPORT_TYPE_UNSPECIFIED = 0;
+  REPORT_TYPE_FLOW = 1;
+  REPORT_TYPE_ANALYTICS = 2;
+  REPORT_TYPE_SIMULATION = 3;
+  REPORT_TYPE_SUMMARY = 4;
+  REPORT_TYPE_HISTORY = 5;
+  REPORT_TYPE_COMPARISON = 6;
+}
+
+message GenerateReportRequest {
+  ReportType type = 1;
+  ReportFormat format = 2;
+  ReportOptions options = 3;
+
+  // Data sources (one of)
+  oneof source {
+    FlowReportSource flow_source = 10;
+    AnalyticsReportSource analytics_source = 11;
+    SimulationReportSource simulation_source = 12;
+    HistoryReportSource history_source = 13;
+  }
+}
+
+message ReportOptions {
+  string title = 1;
+  string description = 2;
+  string author = 3;
+  string language = 4;
+  string timezone = 5;
+  bool include_graph_details = 6;
+  bool include_edge_list = 7;
+  bool include_path_details = 8;
+  bool include_recommendations = 9;
+  bool include_charts = 10;
+  string company_name = 11;
+  string logo_url = 12;
+  string theme = 13;
+  string currency = 14;
+  repeated string tags = 15;
+  int64 ttl_seconds = 16;
+  bool save_to_storage = 17;
+}
+
+message FlowReportSource {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.FlowResult result = 2;
+  SolveMetrics metrics = 3;
+}
+
+message AnalyticsReportSource {
+  logistics.common.v1.Graph graph = 1;
+  AnalyzeGraphResponse analytics = 2;
+}
+
+message SimulationReportSource {
+  logistics.common.v1.Graph baseline_graph = 1;
+  string simulation_type = 2;
+  bytes simulation_result = 3;
+}
+
+message HistoryReportSource {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  repeated string calculation_ids = 3;
+}
+
+message GenerateReportResponse {
+  bool success = 1;
+  ReportInfo report = 2;
+  bytes content = 3;
+  string error_message = 4;
+}
+
+message ReportInfo {
+  string report_id = 1;
+  string title = 2;
+  ReportType type = 3;
+  ReportFormat format = 4;
+  google.protobuf.Timestamp generated_at = 5;
+  int64 size_bytes = 6;
+  double generation_time_ms = 7;
+  string filename = 8;
+  google.protobuf.Timestamp expires_at = 9;
+}
+
+message GetReportRequest {
+  string report_id = 1;
+}
+
+message DownloadReportRequest {
+  string report_id = 1;
+}
+
+message ReportChunk {
+  int32 chunk_index = 1;
+  int32 total_chunks = 2;
+  bytes data = 3;
+  bool is_last = 4;
+}
+
+message ReportRecord {
+  string report_id = 1;
+  ReportInfo info = 2;
+  bytes content = 3;
+}
+
+message ListReportsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  ReportType type = 3;
+  ReportFormat format = 4;
+  google.protobuf.Timestamp created_after = 5;
+  google.protobuf.Timestamp created_before = 6;
+}
+
+message ListReportsResponse {
+  repeated ReportInfo reports = 1;
+  int64 total_count = 2;
+  bool has_more = 3;
+}
+
+message DeleteReportRequest {
+  string report_id = 1;
+}
+
+message ReportFormatsResponse {
+  repeated ReportFormatInfo formats = 1;
+}
+
+message ReportFormatInfo {
+  ReportFormat format = 1;
+  string name = 2;
+  string extension = 3;
+  string mime_type = 4;
+  bool supports_charts = 5;
+  bool supports_styling = 6;
+  repeated ReportType supported_report_types = 7;
+}
+
+// ============================================================================
+// Audit Messages
+// ============================================================================
+
+message GetAuditLogsRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  repeated string services = 3;
+  repeated string actions = 4;
+  string user_id = 5;
+  string resource_type = 6;
+  int32 limit = 7;
+  int32 offset = 8;
+}
+
+message AuditLogsResponse {
+  repeated AuditEntry entries = 1;
+  int64 total_count = 2;
+  bool has_more = 3;
+}
+
+message AuditEntry {
+  string id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string service = 3;
+  string method = 4;
+  string action = 5;
+  string outcome = 6;
+  string user_id = 7;
+  string username = 8;
+  string client_ip = 9;
+  string resource_type = 10;
+  string resource_id = 11;
+  int64 duration_ms = 12;
+  string error_message = 13;
+  map<string, string> metadata = 14;
+}
+
+message GetUserActivityRequest {
+  string user_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message UserActivityResponse {
+  repeated AuditEntry entries = 1;
+  UserActivitySummary summary = 2;
+  int64 total_count = 3;
+}
+
+message UserActivitySummary {
+  int32 total_actions = 1;
+  int32 successful_actions = 2;
+  int32 failed_actions = 3;
+  map<string, int32> actions_by_type = 4;
+  map<string, int32> actions_by_service = 5;
+  google.protobuf.Timestamp first_activity = 6;
+  google.protobuf.Timestamp last_activity = 7;
+}
+
+message GetAuditStatsRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  string group_by = 3;
+}
+
+message AuditStatsResponse {
+  int64 total_events = 1;
+  int64 successful_events = 2;
+  int64 failed_events = 3;
+  int64 unique_users = 4;
+  map<string, int64> by_service = 5;
+  map<string, int64> by_action = 6;
+  repeated AuditStatsPoint timeline = 7;
+}
+
+message AuditStatsPoint {
+  google.protobuf.Timestamp timestamp = 1;
+  int64 count = 2;
+  int64 success_count = 3;
+  int64 failure_count = 4;
+}
+
+// ============================================================================
+// Request Metadata
+// ============================================================================
+
+message RequestMetadata {
+  string request_id = 1;
+  double total_time_ms = 2;
+  double validation_time_ms = 3;
+  double solve_time_ms = 4;
+  double analytics_time_ms = 5;
+  double report_time_ms = 6;
+  string service_version = 7;
+  string algorithm_used = 8;
+  google.protobuf.Timestamp processed_at = 9;
+  string trace_id = 10;
+}

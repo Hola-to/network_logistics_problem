@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package logistics.validation.v1;
+
+import "logistics/common/v1/common.proto";
+
+option go_package = "logistics/gen/go/logistics/validation/v1;validationv1";
+
+service ValidationService {
+  // Валидация структуры графа
+  rpc ValidateGraph(ValidateGraphRequest) returns (ValidateGraphResponse);
+
+  // Валидация потока
+  rpc ValidateFlow(ValidateFlowRequest) returns (ValidateFlowResponse);
+
+  // Проверка совместимости с алгоритмом
+  rpc ValidateForAlgorithm(ValidateForAlgorithmRequest) returns (ValidateForAlgorithmResponse);
+
+  // Полная валидация
+  rpc ValidateAll(ValidateAllRequest) returns (ValidateAllResponse);
+
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ============ Уровни валидации ============
+
+enum ValidationLevel {
+  VALIDATION_LEVEL_UNSPECIFIED = 0;
+  VALIDATION_LEVEL_BASIC = 1; // Только структура
+  VALIDATION_LEVEL_STANDARD = 2; // + связность
+  VALIDATION_LEVEL_STRICT = 3; // + бизнес-правила
+  VALIDATION_LEVEL_FULL = 4; // Всё включая топологию
+}
+
+// ============ ValidateGraph ============
+
+message ValidateGraphRequest {
+  logistics.common.v1.Graph graph = 1;
+  ValidationLevel level = 2;
+
+  // Флаги для выборочных проверок
+  bool check_connectivity = 3;
+  bool check_business_rules = 4;
+  bool check_topology = 5;
+}
+
+message ValidateGraphResponse {
+  logistics.common.v1.ValidationResult result = 1;
+  logistics.common.v1.GraphStatistics statistics = 2;
+  repeated string warnings = 3;
+  ValidationMetrics metrics = 4;
+}
+
+// ============ ValidateFlow ============
+
+message ValidateFlowRequest {
+  logistics.common.v1.Graph graph = 1;
+  double expected_max_flow = 2; // Опционально: ожидаемое значение
+}
+
+message ValidateFlowResponse {
+  bool is_valid = 1;
+  repeated FlowViolation violations = 2;
+  FlowSummary summary = 3;
+}
+
+message FlowViolation {
+  string code = 1;
+  string message = 2;
+  string field = 3;
+  int64 node_id = 4;
+  int64 edge_from = 5;
+  int64 edge_to = 6;
+  double expected = 7;
+  double actual = 8;
+}
+
+message FlowSummary {
+  double total_flow = 1;
+  double total_cost = 2;
+  int32 edges_with_flow = 3;
+  int32 saturated_edges = 4;
+  double source_outflow = 5;
+  double sink_inflow = 6;
+}
+
+// ============ ValidateForAlgorithm ============
+
+message ValidateForAlgorithmRequest {
+  logistics.common.v1.Graph graph = 1;
+  logistics.common.v1.Algorithm algorithm = 2;
+}
+
+message ValidateForAlgorithmResponse {
+  bool is_compatible = 1;
+  repeated string issues = 2;
+  repeated string recommendations = 3;
+  AlgorithmComplexity complexity = 4;
+}
+
+message AlgorithmComplexity {
+  string time_complexity = 1;
+  string space_complexity = 2;
+  int64 estimated_iterations = 3;
+  string recommendation = 4;
+}
+
+// ============ ValidateAll ============
+
+message ValidateAllRequest {
+  logistics.common.v1.Graph graph = 1;
+  ValidationLevel level = 2;
+  logistics.common.v1.Algorithm algorithm = 3; // Опционально
+}
+
+message ValidateAllResponse {
+  bool is_valid = 1;
+  ValidateGraphResponse graph_validation = 2;
+  ValidateFlowResponse flow_validation = 3;
+  ValidateForAlgorithmResponse algorithm_validation = 4;
+  ValidationMetrics metrics = 5;
+}
+
+// ============ Health ============
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_seconds = 3;
+}
+
+// ============ Metrics ============
+
+message ValidationMetrics {
+  int32 total_checks = 1;
+  int32 passed_checks = 2;
+  int32 failed_checks = 3;
+  int32 warning_checks = 4;
+  double duration_ms = 5;
+}
