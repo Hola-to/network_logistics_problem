@@ -9,14 +9,19 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-COPY gen/go/logistics/optimization/ ./gen/go/logistics/optimization/
+# Generated proto files
+COPY gen/go/logistics/audit/ ./gen/go/logistics/audit/
 COPY gen/go/logistics/common/ ./gen/go/logistics/common/
+COPY gen/go/logistics/optimization/ ./gen/go/logistics/optimization/
 COPY gen/openapi/ ./gen/openapi/
 
+# Shared packages
 COPY pkg/apperror/ ./pkg/apperror/
 COPY pkg/audit/ ./pkg/audit/
 COPY pkg/cache/ ./pkg/cache/
+COPY pkg/client/ ./pkg/client/
 COPY pkg/config/ ./pkg/config/
+COPY pkg/domain/ ./pkg/domain/
 COPY pkg/interceptors/ ./pkg/interceptors/
 COPY pkg/logger/ ./pkg/logger/
 COPY pkg/metrics/ ./pkg/metrics/
@@ -25,6 +30,7 @@ COPY pkg/server/ ./pkg/server/
 COPY pkg/swagger/ ./pkg/swagger/
 COPY pkg/telemetry/ ./pkg/telemetry/
 
+# Services
 COPY services/solver-svc/ ./services/solver-svc/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
