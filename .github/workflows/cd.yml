@@ -53,7 +53,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version
+      - name: Get version and owner
         id: version
         run: |
           if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "latest" ]; then
@@ -61,6 +61,9 @@ jobs:
           else
             echo "VERSION=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
+          # Преобразуем owner в lowercase для Docker registry
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=$OWNER_LC" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -79,8 +82,8 @@ jobs:
           file: services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.OWNER_LC }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.OWNER_LC }}/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -104,14 +107,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version
-        id: version
+      - name: Get version and owner
+        id: vars
         run: |
           if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "latest" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=$OWNER_LC" >> $GITHUB_OUTPUT
 
       # Kubernetes деплой
       - name: Setup Helm
@@ -136,7 +141,8 @@ jobs:
             --create-namespace \
             -f deploy/helm/logistics-platform/values.yaml \
             -f deploy/helm/logistics-platform/values-staging.yaml \
-            --set image.tag=${{ steps.version.outputs.VERSION }} \
+            --set global.imageRegistry=${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }} \
+            --set image.tag=${{ steps.vars.outputs.VERSION }} \
             --set secrets.database.password=${{ secrets.DB_PASSWORD_STAGING }} \
             --set secrets.redis.password=${{ secrets.REDIS_PASSWORD_STAGING }} \
             --set secrets.jwt.secret=${{ secrets.JWT_SECRET_STAGING }} \
@@ -166,10 +172,10 @@ jobs:
           echo "Docker images built and pushed"
           echo "=========================================="
           echo ""
-          echo "Version: ${{ steps.version.outputs.VERSION }}"
+          echo "Version: ${{ steps.vars.outputs.VERSION }}"
           echo ""
           echo "Images available at:"
-          echo "  ${{ env.REGISTRY }}/${{ github.repository_owner }}/<service>:${{ steps.version.outputs.VERSION }}"
+          echo "  ${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}/<service>:${{ steps.vars.outputs.VERSION }}"
           echo ""
           echo "To deploy manually run:"
           echo "  docker-compose pull"
@@ -179,19 +185,9 @@ jobs:
         run: |
           echo "## Staging Deployment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.vars.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Services" >> $GITHUB_STEP_SUMMARY
-          echo "- gateway-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- solver-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- auth-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- validation-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- analytics-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- history-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- audit-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- simulation-svc" >> $GITHUB_STEP_SUMMARY
-          echo "- report-svc" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify Slack
         if: always() && env.HAS_SLACK == 'true'
@@ -221,14 +217,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version
-        id: version
+      - name: Get version and owner
+        id: vars
         run: |
           VERSION="${{ github.event.inputs.version }}"
           if [ "$VERSION" == "" ] || [ "$VERSION" == "latest" ]; then
             VERSION="${{ github.sha }}"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=$OWNER_LC" >> $GITHUB_OUTPUT
 
       # Kubernetes деплой
       - name: Setup Helm
@@ -253,7 +251,8 @@ jobs:
             --create-namespace \
             -f deploy/helm/logistics-platform/values.yaml \
             -f deploy/helm/logistics-platform/values-production.yaml \
-            --set image.tag=${{ steps.version.outputs.VERSION }} \
+            --set global.imageRegistry=${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }} \
+            --set image.tag=${{ steps.vars.outputs.VERSION }} \
             --set secrets.database.password=${{ secrets.DB_PASSWORD_PROD }} \
             --set secrets.redis.password=${{ secrets.REDIS_PASSWORD_PROD }} \
             --set secrets.jwt.secret=${{ secrets.JWT_SECRET_PROD }} \
@@ -283,7 +282,7 @@ jobs:
           echo "Production Deployment Ready"
           echo "=========================================="
           echo ""
-          echo "Version: ${{ steps.version.outputs.VERSION }}"
+          echo "Version: ${{ steps.vars.outputs.VERSION }}"
           echo ""
           echo "Deploy manually:"
           echo "  docker-compose pull"
@@ -293,7 +292,8 @@ jobs:
         run: |
           echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.vars.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify Slack
