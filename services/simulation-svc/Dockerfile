@@ -18,15 +18,14 @@ COPY go.mod go.sum ./
 # Скачиваем зависимости
 RUN go mod download && go mod verify
 
-# Минимальный набор файлов
-# Сгенерированные proto файлы
+# Generated proto files
 COPY gen/go/logistics/audit/ ./gen/go/logistics/audit/
 COPY gen/go/logistics/common/ ./gen/go/logistics/common/
 COPY gen/go/logistics/optimization/ ./gen/go/logistics/optimization/
 COPY gen/go/logistics/simulation/ ./gen/go/logistics/simulation/
 COPY gen/openapi/ ./gen/openapi/
 
-# Общие пакеты (pkg)
+# Shared packages
 COPY pkg/apperror/ ./pkg/apperror/
 COPY pkg/audit/ ./pkg/audit/
 COPY pkg/client/ ./pkg/client/
@@ -40,7 +39,7 @@ COPY pkg/server/ ./pkg/server/
 COPY pkg/swagger/ ./pkg/swagger/
 COPY pkg/telemetry/ ./pkg/telemetry/
 
-# Сервисы
+# Services
 COPY services/simulation-svc/ ./services/simulation-svc/
 
 # Migrations
