@@ -35,6 +35,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
     strategy:
       matrix:
         service:
@@ -51,6 +53,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "latest" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -61,28 +72,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event.inputs.version != '' && github.event.inputs.version != 'latest' }}
-
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ github.sha }}
+            VERSION=${{ steps.version.outputs.VERSION }}
 
   # ----------------------------------------
   # Деплой в Staging
@@ -94,6 +96,10 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
+    env:
+      HAS_KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_STAGING != '' }}
+      HAS_SSH_KEY: ${{ secrets.STAGING_SSH_KEY != '' }}
+      HAS_SLACK: ${{ secrets.SLACK_WEBHOOK != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,21 +113,21 @@ jobs:
             echo "VERSION=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      # Вариант 1: Деплой через Helm (если есть Kubernetes)
+      # Kubernetes деплой
       - name: Setup Helm
-        if: secrets.KUBE_CONFIG_STAGING != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         uses: azure/setup-helm@v4
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Configure kubectl
-        if: secrets.KUBE_CONFIG_STAGING != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         uses: azure/k8s-set-context@v4
         with:
           kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
 
       - name: Deploy to Kubernetes
-        if: secrets.KUBE_CONFIG_STAGING != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         run: |
           helm dependency update deploy/helm/logistics-platform
           
@@ -137,9 +143,9 @@ jobs:
             --wait \
             --timeout 10m
 
-      # Вариант 2: Деплой через SSH (если нет Kubernetes)
+      # SSH деплой
       - name: Deploy via SSH
-        if: secrets.STAGING_SSH_KEY != ''
+        if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.STAGING_HOST }}
@@ -152,27 +158,22 @@ jobs:
             docker-compose up -d --remove-orphans
             docker system prune -f
 
-      # Вариант 3: Просто вывести инструкции (если нет инфраструктуры)
+      # Инструкции если нет инфраструктуры
       - name: Deployment Info
-        if: secrets.KUBE_CONFIG_STAGING == '' && secrets.STAGING_SSH_KEY == ''
+        if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY != 'true'
         run: |
           echo "=========================================="
-          echo "Docker images built and pushed:"
+          echo "Docker images built and pushed"
           echo "=========================================="
           echo ""
+          echo "Version: ${{ steps.version.outputs.VERSION }}"
+          echo ""
           echo "Images available at:"
-          echo "  ${{ env.REGISTRY }}/${{ github.repository_owner }}/gateway-svc:${{ steps.version.outputs.VERSION }}"
-          echo "  ${{ env.REGISTRY }}/${{ github.repository_owner }}/solver-svc:${{ steps.version.outputs.VERSION }}"
-          echo "  ${{ env.REGISTRY }}/${{ github.repository_owner }}/auth-svc:${{ steps.version.outputs.VERSION }}"
-          echo "  ... and other services"
+          echo "  ${{ env.REGISTRY }}/${{ github.repository_owner }}/<service>:${{ steps.version.outputs.VERSION }}"
           echo ""
-          echo "To deploy manually:"
-          echo "  1. Pull images: docker-compose pull"
-          echo "  2. Start: docker-compose up -d"
-          echo ""
-          echo "Or use Kubernetes:"
-          echo "  kubectl apply -k deploy/k8s/overlays/staging"
-          echo ""
+          echo "To deploy manually run:"
+          echo "  docker-compose pull"
+          echo "  docker-compose up -d"
 
       - name: Create deployment summary
         run: |
@@ -180,16 +181,20 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Docker Images" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ env.REGISTRY }}/${{ github.repository_owner }}/<service>:${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Services" >> $GITHUB_STEP_SUMMARY
+          echo "- gateway-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- solver-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- auth-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- validation-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- analytics-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- history-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- audit-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- simulation-svc" >> $GITHUB_STEP_SUMMARY
+          echo "- report-svc" >> $GITHUB_STEP_SUMMARY
 
-      # Slack уведомление (опционально)
       - name: Notify Slack
-        if: always() && secrets.SLACK_WEBHOOK != ''
+        if: always() && env.HAS_SLACK == 'true'
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
@@ -199,7 +204,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
 
   # ----------------------------------------
-  # Деплой в Production (только вручную)
+  # Деплой в Production
   # ----------------------------------------
   deploy-production:
     name: Deploy to Production
@@ -208,6 +213,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
     environment:
       name: production
+    env:
+      HAS_KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PRODUCTION != '' }}
+      HAS_SSH_KEY: ${{ secrets.PROD_SSH_KEY != '' }}
+      HAS_SLACK: ${{ secrets.SLACK_WEBHOOK != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -221,21 +230,21 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      # Helm деплой (если есть Kubernetes)
+      # Kubernetes деплой
       - name: Setup Helm
-        if: secrets.KUBE_CONFIG_PRODUCTION != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         uses: azure/setup-helm@v4
         with:
           version: ${{ env.HELM_VERSION }}
 
       - name: Configure kubectl
-        if: secrets.KUBE_CONFIG_PRODUCTION != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         uses: azure/k8s-set-context@v4
         with:
           kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
 
       - name: Deploy to Kubernetes
-        if: secrets.KUBE_CONFIG_PRODUCTION != ''
+        if: env.HAS_KUBE_CONFIG == 'true'
         run: |
           helm dependency update deploy/helm/logistics-platform
           
@@ -251,9 +260,9 @@ jobs:
             --wait \
             --timeout 15m
 
-      # SSH деплой (если нет Kubernetes)
+      # SSH деплой
       - name: Deploy via SSH
-        if: secrets.PROD_SSH_KEY != ''
+        if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -262,14 +271,13 @@ jobs:
           script: |
             cd /opt/flowly
             git fetch --tags
-            git checkout ${{ steps.version.outputs.VERSION }}
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml pull
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            docker-compose -f docker-compose.yml pull
+            docker-compose -f docker-compose.yml up -d --remove-orphans
             docker system prune -f
 
-      # Инструкции (если нет инфраструктуры)
+      # Инструкции
       - name: Deployment Info
-        if: secrets.KUBE_CONFIG_PRODUCTION == '' && secrets.PROD_SSH_KEY == ''
+        if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY != 'true'
         run: |
           echo "=========================================="
           echo "Production Deployment Ready"
@@ -277,10 +285,9 @@ jobs:
           echo ""
           echo "Version: ${{ steps.version.outputs.VERSION }}"
           echo ""
-          echo "Images pushed to registry. Deploy manually:"
-          echo ""
-          echo "  docker-compose -f docker-compose.yml -f deploy/docker/docker-compose.prod.yml up -d"
-          echo ""
+          echo "Deploy manually:"
+          echo "  docker-compose pull"
+          echo "  docker-compose up -d"
 
       - name: Create deployment summary
         run: |
@@ -288,30 +295,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create GitHub Release Tag
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const version = '${{ steps.version.outputs.VERSION }}';
-            const tagName = `deploy-prod-${version}`;
-            
-            try {
-              await github.rest.git.createRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `refs/tags/${tagName}`,
-                sha: context.sha
-              });
-              console.log(`Created tag: ${tagName}`);
-            } catch (e) {
-              console.log(`Tag might already exist: ${e.message}`);
-            }
 
       - name: Notify Slack
-        if: always() && secrets.SLACK_WEBHOOK != ''
+        if: always() && env.HAS_SLACK == 'true'
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
