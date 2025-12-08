@@ -1,0 +1,38 @@
+# services/solver-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  solver-svc:
+    build:
+      context: ../..
+      dockerfile: services/solver-svc/Dockerfile.dev
+    ports:
+      - "50054:50054"
+      - "8054:8054"
+    environment:
+      - APP_NAME=solver-svc
+      - APP_ENV=development
+      - GRPC_PORT=50054
+      - METRICS_PORT=8054
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - CACHE_ENABLED=true
+      - CACHE_DRIVER=memory
+      - CACHE_DEFAULT_TTL=5m
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+  # Опционально: Redis для кэша
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - logistics-net
+
+networks:
+  logistics-net:
+    driver: bridge

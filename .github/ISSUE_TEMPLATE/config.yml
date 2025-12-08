@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/your-org/logistics/discussions
+    about: Ask questions and discuss ideas
+  - name: 📚 Documentation
+    url: https://docs.logistics.example.com
+    about: Read the documentation

@@ -1,0 +1,322 @@
+# docker-compose.yml
+
+version: "3.8"
+
+x-common-env: &common-env
+  APP_ENV: development
+  LOG_LEVEL: debug
+  LOG_FORMAT: text
+  TRACING_ENABLED: "true"
+  TRACING_ENDPOINT: http://jaeger:4318
+
+x-database-env: &database-env
+  DATABASE_DRIVER: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: 5432
+  DATABASE_USER: logistics
+  DATABASE_PASSWORD: logistics
+  DATABASE_NAME: logistics
+  DATABASE_AUTO_MIGRATE: "true"
+
+services:
+  # ============================================================
+  # Infrastructure
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: logistics-postgres
+    environment:
+      POSTGRES_USER: logistics
+      POSTGRES_PASSWORD: logistics
+      POSTGRES_DB: logistics
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: logistics-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: logistics-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317" # gRPC OTLP
+      - "4318:4318" # HTTP OTLP
+    networks:
+      - logistics-net
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: logistics-prometheus
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - logistics-net
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: logistics-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - logistics-net
+
+  # ============================================================
+  # Backend Services
+  # ============================================================
+  solver-svc:
+    build:
+      context: .
+      dockerfile: services/solver-svc/Dockerfile
+    container_name: logistics-solver
+    environment:
+      <<: *common-env
+      APP_NAME: solver-svc
+      GRPC_PORT: 50054
+      METRICS_PORT: 8054
+      CACHE_ENABLED: "true"
+      CACHE_DRIVER: redis
+      CACHE_REDIS_ADDR: redis:6379
+      CACHE_DEFAULT_TTL: 5m
+    ports:
+      - "50054:50054"
+      - "8054:8054"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  validation-svc:
+    build:
+      context: .
+      dockerfile: services/validation-svc/Dockerfile
+    container_name: logistics-validation
+    environment:
+      <<: *common-env
+      APP_NAME: validation-svc
+      GRPC_PORT: 50052
+      METRICS_PORT: 8052
+    ports:
+      - "50052:50052"
+      - "8052:8052"
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  analytics-svc:
+    build:
+      context: .
+      dockerfile: services/analytics-svc/Dockerfile
+    container_name: logistics-analytics
+    environment:
+      <<: *common-env
+      APP_NAME: analytics-svc
+      GRPC_PORT: 50053
+      METRICS_PORT: 8053
+    ports:
+      - "50053:50053"
+      - "8053:8053"
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  auth-svc:
+    build:
+      context: .
+      dockerfile: services/auth-svc/Dockerfile
+    container_name: logistics-auth
+    environment:
+      # ВНИМАНИЕ: Слияние двух якорей через список
+      <<: [*common-env, *database-env]
+      APP_NAME: auth-svc
+      GRPC_PORT: 50055
+      METRICS_PORT: 8055
+      JWT_SECRET: super-secret-key-change-in-production
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 168h
+    ports:
+      - "50055:50055"
+      - "8055:8055"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  history-svc:
+    build:
+      context: .
+      dockerfile: services/history-svc/Dockerfile
+    container_name: logistics-history
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: history-svc
+      GRPC_PORT: 50056
+      METRICS_PORT: 8056
+    ports:
+      - "50056:50056"
+      - "8056:8056"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  audit-svc:
+    build:
+      context: .
+      dockerfile: services/audit-svc/Dockerfile
+    container_name: logistics-audit
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: audit-svc
+      GRPC_PORT: 50057
+      METRICS_PORT: 8057
+    ports:
+      - "50057:50057"
+      - "8057:8057"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  simulation-svc:
+    build:
+      context: .
+      dockerfile: services/simulation-svc/Dockerfile
+    container_name: logistics-simulation
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: simulation-svc
+      GRPC_PORT: 50058
+      METRICS_PORT: 8088
+      SERVICES_SOLVER_HOST: solver-svc
+      SERVICES_SOLVER_PORT: 50054
+    ports:
+      - "50058:50058"
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      solver-svc:
+        condition: service_started
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  report-svc:
+    build:
+      context: .
+      dockerfile: services/report-svc/Dockerfile
+    container_name: logistics-report
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: report-svc
+      GRPC_PORT: 50059
+      METRICS_PORT: 8059
+      REPORT_DEFAULT_TTL: 24h
+      REPORT_CLEANUP_INTERVAL: 1h
+    ports:
+      - "50059:50059"
+      - "8059:8059"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  gateway-svc:
+    build:
+      context: .
+      dockerfile: services/gateway-svc/Dockerfile
+    container_name: logistics-gateway
+    environment:
+      <<: *common-env
+      APP_NAME: gateway-svc
+      HTTP_PORT: 8080
+      CORS_ENABLED: "true"
+      CORS_ALLOWED_ORIGINS: "*"
+      SERVICES_SOLVER_HOST: solver-svc
+      SERVICES_SOLVER_PORT: 50054
+      SERVICES_ANALYTICS_HOST: analytics-svc
+      SERVICES_ANALYTICS_PORT: 50053
+      SERVICES_VALIDATION_HOST: validation-svc
+      SERVICES_VALIDATION_PORT: 50052
+      SERVICES_HISTORY_HOST: history-svc
+      SERVICES_HISTORY_PORT: 50056
+      SERVICES_AUTH_HOST: auth-svc
+      SERVICES_AUTH_PORT: 50055
+      SERVICES_SIMULATION_HOST: simulation-svc
+      SERVICES_SIMULATION_PORT: 50058
+      SERVICES_REPORT_HOST: report-svc
+      SERVICES_REPORT_PORT: 50059
+      SERVICES_AUDIT_HOST: audit-svc
+      SERVICES_AUDIT_PORT: 50057
+    ports:
+      - "8080:8080"
+    depends_on:
+      - solver-svc
+      - validation-svc
+      - analytics-svc
+      - auth-svc
+      - history-svc
+      - audit-svc
+      - simulation-svc
+      - report-svc
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  logistics-net:
+    driver: bridge

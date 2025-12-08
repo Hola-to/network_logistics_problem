@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  GO_VERSION: "1.25"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ----------------------------------------
+  # Создание релиза
+  # ----------------------------------------
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run Tests
+        run: go test -race ./pkg/... ./services/...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker Images
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+
+          for service in analytics-svc audit-svc auth-svc gateway-svc history-svc report-svc simulation-svc solver-svc validation-svc; do
+            echo "Building $service..."
+            docker build \
+              --build-arg VERSION=${VERSION} \
+              -t ghcr.io/${{ github.repository_owner }}/${service}:${VERSION} \
+              -t ghcr.io/${{ github.repository_owner }}/${service}:latest \
+              -f services/${service}/Dockerfile .
+
+            docker push ghcr.io/${{ github.repository_owner }}/${service}:${VERSION}
+            docker push ghcr.io/${{ github.repository_owner }}/${service}:latest
+          done
+
+      - name: Build Binaries
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p dist
+
+          for service in analytics-svc audit-svc auth-svc gateway-svc history-svc report-svc simulation-svc solver-svc validation-svc; do
+            echo "Building $service..."
+
+            # Linux amd64
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+              -ldflags="-w -s -X main.Version=${VERSION}" \
+              -o dist/${service}-linux-amd64 \
+              ./services/${service}/cmd/main.go
+
+            # Linux arm64
+            CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+              -ldflags="-w -s -X main.Version=${VERSION}" \
+              -o dist/${service}-linux-arm64 \
+              ./services/${service}/cmd/main.go
+
+            # Darwin amd64
+            CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
+              -ldflags="-w -s -X main.Version=${VERSION}" \
+              -o dist/${service}-darwin-amd64 \
+              ./services/${service}/cmd/main.go
+
+            # Darwin arm64
+            CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
+              -ldflags="-w -s -X main.Version=${VERSION}" \
+              -o dist/${service}-darwin-arm64 \
+              ./services/${service}/cmd/main.go
+          done
+
+          cd dist && sha256sum * > checksums.txt
+
+      - name: Generate Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: ".github/changelog-config.json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: |
+            dist/*
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: "#releases"
+          text: "New release ${{ steps.version.outputs.VERSION }} published! :rocket:"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

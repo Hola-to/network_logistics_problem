@@ -1,0 +1,32 @@
+# services/solver-svc/Dockerfile.dev
+
+FROM golang:1.24-alpine
+
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY gen/go/logistics/optimization/ ./gen/go/logistics/optimization/
+COPY gen/go/logistics/common/ ./gen/go/logistics/common/
+COPY gen/openapi/ ./gen/openapi/
+
+COPY pkg/apperror/ ./pkg/apperror/
+COPY pkg/audit/ ./pkg/audit/
+COPY pkg/cache/ ./pkg/cache/
+COPY pkg/config/ ./pkg/config/
+COPY pkg/interceptors/ ./pkg/interceptors/
+COPY pkg/logger/ ./pkg/logger/
+COPY pkg/metrics/ ./pkg/metrics/
+COPY pkg/ratelimit/ ./pkg/ratelimit/
+COPY pkg/server/ ./pkg/server/
+COPY pkg/swagger/ ./pkg/swagger/
+COPY pkg/telemetry/ ./pkg/telemetry/
+
+COPY services/solver-svc/ ./services/solver-svc/
+
+EXPOSE 50054 8054
+
+CMD ["air", "-c", "services/solver-svc/.air.toml"]

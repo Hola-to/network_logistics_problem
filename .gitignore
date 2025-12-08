@@ -6,9 +6,6 @@ dist/
 *.so
 *.dylib
 
-# Test coverage
-coverage.out
-
 # OS specific
 .DS_Store
 Thumbs.db

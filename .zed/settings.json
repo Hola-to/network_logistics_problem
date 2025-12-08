@@ -4,6 +4,30 @@
       "initialization_options": {
         "build.buildFlags": ["-tags=integration"]
       }
+    },
+    "helm_ls": {
+      "settings": {
+        "logLevel": "info"
+      }
+    }
+  },
+  "file_types": {
+    "Helm": [
+      "**/helm/**/templates/**/*.yaml",
+      "**/helm/**/templates/**/*.tpl",
+      "**/templates/**/*.yaml",
+      "Chart.yaml",
+      "values.yaml",
+      "values-*.yaml"
+    ]
+  },
+  "languages": {
+    "Helm": {
+      "language_servers": ["helm_ls", "!yaml-language-server"],
+      "format_on_save": "off"
+    },
+    "YAML": {
+      "language_servers": ["yaml-language-server"]
     }
   }
 }

@@ -1,0 +1,71 @@
+# deploy/helm/logistics-platform/templates/deployment-gateway.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "logistics.fullname" . }}-gateway
+  labels:
+    {{- include "logistics.serviceLabels" (dict "component" "gateway" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount.gateway }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "logistics.fullname" . }}-gateway
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        app: {{ include "logistics.fullname" . }}-gateway
+    spec:
+      serviceAccountName: {{ include "logistics.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ include "logistics.image" (dict "global" .Values.global "service" "gateway-svc" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.gateway }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "logistics.fullname" . }}-config
+          env:
+            - name: APP_NAME
+              value: "gateway-svc"
+            - name: HTTP_PORT
+              value: {{ .Values.ports.gateway | quote }}
+          resources:
+            {{- toYaml .Values.resources.gateway | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- end }}

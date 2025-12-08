@@ -1,0 +1,404 @@
+# deploy/docker/docker-compose.prod.yml
+
+version: "3.8"
+
+x-common-env: &common-env
+  APP_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+  TRACING_ENABLED: "true"
+  TRACING_ENDPOINT: http://jaeger:4318
+
+x-database-env: &database-env
+  DATABASE_DRIVER: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: 5432
+  DATABASE_USER: ${DB_USER:-logistics}
+  DATABASE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DATABASE_NAME: ${DB_NAME:-logistics}
+  DATABASE_SSL_MODE: require
+  DATABASE_AUTO_MIGRATE: "false"
+
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+x-resources: &default-resources
+  deploy:
+    resources:
+      limits:
+        cpus: "0.5"
+        memory: 256M
+      reservations:
+        cpus: "0.1"
+        memory: 128M
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ============================================================
+  # Infrastructure
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: logistics-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-logistics}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-logistics}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-logistics}"]
+      <<: *healthcheck
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: logistics-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      <<: *healthcheck
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  # ============================================================
+  # Observability
+  # ============================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: logistics-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+    volumes:
+      - jaeger_data:/badger
+    ports:
+      - "16686:16686"
+    <<: *default-logging
+    networks:
+      - backend
+      - monitoring
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: logistics-prometheus
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    <<: *default-logging
+    networks:
+      - monitoring
+    restart: always
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: logistics-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    <<: *default-logging
+    networks:
+      - monitoring
+    restart: always
+
+  # ============================================================
+  # Backend Services
+  # ============================================================
+  solver-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/solver-svc:${VERSION:-latest}
+    container_name: logistics-solver
+    environment:
+      <<: *common-env
+      APP_NAME: solver-svc
+      GRPC_PORT: 50054
+      METRICS_PORT: 8054
+      CACHE_ENABLED: "true"
+      CACHE_DRIVER: redis
+      CACHE_REDIS_ADDR: redis:6379
+      CACHE_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "/solver-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      redis:
+        condition: service_healthy
+    <<: *default-logging
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    networks:
+      - backend
+    restart: always
+
+  validation-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/validation-svc:${VERSION:-latest}
+    container_name: logistics-validation
+    environment:
+      <<: *common-env
+      APP_NAME: validation-svc
+      GRPC_PORT: 50052
+      METRICS_PORT: 8052
+    healthcheck:
+      test: ["CMD", "/validation-svc", "health"]
+      <<: *healthcheck
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  analytics-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/analytics-svc:${VERSION:-latest}
+    container_name: logistics-analytics
+    environment:
+      <<: *common-env
+      APP_NAME: analytics-svc
+      GRPC_PORT: 50053
+      METRICS_PORT: 8053
+    healthcheck:
+      test: ["CMD", "/analytics-svc", "health"]
+      <<: *healthcheck
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  auth-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/auth-svc:${VERSION:-latest}
+    container_name: logistics-auth
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: auth-svc
+      GRPC_PORT: 50055
+      METRICS_PORT: 8055
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-168h}
+    healthcheck:
+      test: ["CMD", "/auth-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  history-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/history-svc:${VERSION:-latest}
+    container_name: logistics-history
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: history-svc
+      GRPC_PORT: 50056
+      METRICS_PORT: 8056
+    healthcheck:
+      test: ["CMD", "/history-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  audit-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/audit-svc:${VERSION:-latest}
+    container_name: logistics-audit
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: audit-svc
+      GRPC_PORT: 50057
+      METRICS_PORT: 8057
+    healthcheck:
+      test: ["CMD", "/audit-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  simulation-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/simulation-svc:${VERSION:-latest}
+    container_name: logistics-simulation
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: simulation-svc
+      GRPC_PORT: 50058
+      METRICS_PORT: 8088
+      SERVICES_SOLVER_HOST: solver-svc
+      SERVICES_SOLVER_PORT: 50054
+    healthcheck:
+      test: ["CMD", "/simulation-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+      solver-svc:
+        condition: service_healthy
+    <<: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    networks:
+      - backend
+    restart: always
+
+  report-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/report-svc:${VERSION:-latest}
+    container_name: logistics-report
+    environment:
+      <<: [*common-env, *database-env]
+      APP_NAME: report-svc
+      GRPC_PORT: 50059
+      METRICS_PORT: 8059
+      REPORT_DEFAULT_TTL: 24h
+      REPORT_CLEANUP_INTERVAL: 1h
+    healthcheck:
+      test: ["CMD", "/report-svc", "health"]
+      <<: *healthcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+    <<: [*default-logging, *default-resources]
+    networks:
+      - backend
+    restart: always
+
+  # ============================================================
+  # API Gateway
+  # ============================================================
+  gateway-svc:
+    image: ${REGISTRY:-ghcr.io/your-org}/gateway-svc:${VERSION:-latest}
+    container_name: logistics-gateway
+    environment:
+      <<: *common-env
+      APP_NAME: gateway-svc
+      HTTP_PORT: 8080
+      CORS_ENABLED: "true"
+      CORS_ALLOWED_ORIGINS: ${CORS_ORIGINS:-*}
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_RPS: 100
+      # Backend services
+      SERVICES_SOLVER_HOST: solver-svc
+      SERVICES_SOLVER_PORT: 50054
+      SERVICES_ANALYTICS_HOST: analytics-svc
+      SERVICES_ANALYTICS_PORT: 50053
+      SERVICES_VALIDATION_HOST: validation-svc
+      SERVICES_VALIDATION_PORT: 50052
+      SERVICES_HISTORY_HOST: history-svc
+      SERVICES_HISTORY_PORT: 50056
+      SERVICES_AUTH_HOST: auth-svc
+      SERVICES_AUTH_PORT: 50055
+      SERVICES_SIMULATION_HOST: simulation-svc
+      SERVICES_SIMULATION_PORT: 50058
+      SERVICES_REPORT_HOST: report-svc
+      SERVICES_REPORT_PORT: 50059
+      SERVICES_AUDIT_HOST: audit-svc
+      SERVICES_AUDIT_PORT: 50057
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      <<: *healthcheck
+    depends_on:
+      - solver-svc
+      - validation-svc
+      - analytics-svc
+      - auth-svc
+      - history-svc
+      - audit-svc
+      - simulation-svc
+      - report-svc
+    <<: *default-logging
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    networks:
+      - backend
+      - frontend
+    restart: always
+
+  # ============================================================
+  # Reverse Proxy (optional)
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: logistics-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - gateway-svc
+    <<: *default-logging
+    networks:
+      - frontend
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
+  jaeger_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+  monitoring:
+    driver: bridge

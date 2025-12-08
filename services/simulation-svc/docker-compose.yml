@@ -1,0 +1,66 @@
+# services/simulation-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  simulation-svc:
+    build:
+      context: ../..
+      dockerfile: services/simulation-svc/Dockerfile
+    ports:
+      - "50058:50058"
+      - "8088:8088"
+    environment:
+      - GRPC_PORT=50058
+      - METRICS_PORT=8088
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/simulations?sslmode=disable
+      - SOLVER_ADDR=solver-svc:50054
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/simulation-svc", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - logistics
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: simulations
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics
+
+  # solver-svc для интеграции
+  solver-svc:
+    build:
+      context: ../..
+      dockerfile: services/solver-svc/Dockerfile
+    ports:
+      - "50054:50054"
+    networks:
+      - logistics
+
+volumes:
+  postgres_data:
+
+networks:
+  logistics:
+    driver: bridge

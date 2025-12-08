@@ -1,0 +1,34 @@
+# services/gateway-svc/Dockerfile.dev
+
+FROM golang:1.24-alpine
+
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY gen/go/logistics/ ./gen/go/logistics/
+COPY gen/openapi/ ./gen/openapi/
+
+COPY pkg/apperror/ ./pkg/apperror/
+COPY pkg/audit/ ./pkg/audit/
+COPY pkg/cache/ ./pkg/cache/
+COPY pkg/client/ ./pkg/client/
+COPY pkg/config/ ./pkg/config/
+COPY pkg/domain/ ./pkg/domain/
+COPY pkg/interceptors/ ./pkg/interceptors/
+COPY pkg/logger/ ./pkg/logger/
+COPY pkg/metrics/ ./pkg/metrics/
+COPY pkg/passhash/ ./pkg/passhash/
+COPY pkg/ratelimit/ ./pkg/ratelimit/
+COPY pkg/server/ ./pkg/server/
+COPY pkg/swagger/ ./pkg/swagger/
+COPY pkg/telemetry/ ./pkg/telemetry/
+
+COPY services/gateway-svc/ ./services/gateway-svc/
+
+EXPOSE 8080
+
+CMD ["air", "-c", "services/gateway-svc/.air.toml"]

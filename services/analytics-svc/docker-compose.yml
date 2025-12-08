@@ -1,0 +1,28 @@
+# services/analytics-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  analytics-svc:
+    build:
+      context: ../..
+      dockerfile: services/analytics-svc/Dockerfile.dev
+    ports:
+      - "50053:50053"
+      - "8053:8053"
+    environment:
+      - APP_NAME=analytics-svc
+      - APP_ENV=development
+      - GRPC_PORT=50053
+      - METRICS_PORT=8053
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - TRACING_ENABLED=false
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+networks:
+  logistics-net:
+    driver: bridge

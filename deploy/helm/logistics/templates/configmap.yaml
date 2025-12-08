@@ -1,0 +1,64 @@
+# deploy/helm/logistics-platform/templates/configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "logistics.fullname" . }}-config
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.common.env | quote }}
+  LOG_LEVEL: {{ .Values.common.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.common.logFormat | quote }}
+
+  # Database
+  DATABASE_DRIVER: "postgres"
+  DATABASE_HOST: {{ include "logistics.databaseHost" . | quote }}
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: {{ .Values.postgresql.auth.database | quote }}
+  DATABASE_USER: {{ .Values.postgresql.auth.username | quote }}
+  DATABASE_SSL_MODE: "require"
+  DATABASE_AUTO_MIGRATE: "false"
+
+  # Cache
+  CACHE_ENABLED: {{ .Values.services.solver.cache.enabled | quote }}
+  CACHE_DRIVER: {{ .Values.services.solver.cache.driver | quote }}
+  CACHE_REDIS_ADDR: "{{ include "logistics.redisHost" . }}:6379"
+  CACHE_DEFAULT_TTL: {{ .Values.services.solver.cache.ttl | quote }}
+
+  # Tracing
+  TRACING_ENABLED: {{ .Values.common.tracing.enabled | quote }}
+  TRACING_ENDPOINT: {{ .Values.common.tracing.endpoint | quote }}
+  TRACING_SAMPLE_RATE: {{ .Values.common.tracing.sampleRate | quote }}
+
+  # Services discovery
+  SERVICES_SOLVER_HOST: "{{ include "logistics.fullname" . }}-solver"
+  SERVICES_SOLVER_PORT: {{ .Values.ports.solver | quote }}
+  SERVICES_ANALYTICS_HOST: "{{ include "logistics.fullname" . }}-analytics"
+  SERVICES_ANALYTICS_PORT: {{ .Values.ports.analytics | quote }}
+  SERVICES_VALIDATION_HOST: "{{ include "logistics.fullname" . }}-validation"
+  SERVICES_VALIDATION_PORT: {{ .Values.ports.validation | quote }}
+  SERVICES_HISTORY_HOST: "{{ include "logistics.fullname" . }}-history"
+  SERVICES_HISTORY_PORT: {{ .Values.ports.history | quote }}
+  SERVICES_AUTH_HOST: "{{ include "logistics.fullname" . }}-auth"
+  SERVICES_AUTH_PORT: {{ .Values.ports.auth | quote }}
+  SERVICES_SIMULATION_HOST: "{{ include "logistics.fullname" . }}-simulation"
+  SERVICES_SIMULATION_PORT: {{ .Values.ports.simulation | quote }}
+  SERVICES_REPORT_HOST: "{{ include "logistics.fullname" . }}-report"
+  SERVICES_REPORT_PORT: {{ .Values.ports.report | quote }}
+  SERVICES_AUDIT_HOST: "{{ include "logistics.fullname" . }}-audit"
+  SERVICES_AUDIT_PORT: {{ .Values.ports.audit | quote }}
+
+  # Gateway specific
+  CORS_ENABLED: {{ .Values.services.gateway.cors.enabled | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.services.gateway.cors.allowedOrigins | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.services.gateway.rateLimit.enabled | quote }}
+  RATE_LIMIT_RPS: {{ .Values.services.gateway.rateLimit.rps | quote }}
+
+  # Auth specific
+  JWT_ACCESS_EXPIRY: {{ .Values.services.auth.jwt.accessExpiry | quote }}
+  JWT_REFRESH_EXPIRY: {{ .Values.services.auth.jwt.refreshExpiry | quote }}
+
+  # Report specific
+  REPORT_DEFAULT_TTL: {{ .Values.services.report.defaultTTL | quote }}
+  REPORT_CLEANUP_INTERVAL: {{ .Values.services.report.cleanupInterval | quote }}

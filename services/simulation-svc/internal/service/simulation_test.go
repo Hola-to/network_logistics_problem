@@ -1,3 +1,4 @@
+// services/simulation-svc/internal/service/simulation_test.go
 package service
 
 import (
@@ -13,6 +14,7 @@ import (
 	commonv1 "logistics/gen/go/logistics/common/v1"
 	simulationv1 "logistics/gen/go/logistics/simulation/v1"
 	"logistics/pkg/client"
+	"logistics/services/simulation-svc/internal/engine"
 	"logistics/services/simulation-svc/internal/repository"
 )
 
@@ -30,7 +32,6 @@ func (m *MockSimulationRepository) Create(ctx context.Context, sim *repository.S
 	if args.Get(0) != nil {
 		return args.Error(0)
 	}
-	// Симулируем присвоение ID
 	sim.ID = "test-sim-id"
 	sim.CreatedAt = time.Now()
 	sim.UpdatedAt = time.Now()
@@ -74,12 +75,12 @@ func (m *MockSimulationRepository) GetByUserAndID(ctx context.Context, userID, i
 	return args.Get(0).(*repository.Simulation), args.Error(1)
 }
 
-// MockSolverClient mock для solver клиента
-type MockSolverClient struct {
+// MockSolverClientInterface mock для engine.SolverClientInterface
+type MockSolverClientInterface struct {
 	mock.Mock
 }
 
-func (m *MockSolverClient) Solve(ctx context.Context, graph *commonv1.Graph, algorithm commonv1.Algorithm, opts interface{}) (*client.SolveResult, error) {
+func (m *MockSolverClientInterface) Solve(ctx context.Context, graph *commonv1.Graph, algorithm commonv1.Algorithm, opts interface{}) (*client.SolveResult, error) {
 	args := m.Called(ctx, graph, algorithm, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -87,9 +88,8 @@ func (m *MockSolverClient) Solve(ctx context.Context, graph *commonv1.Graph, alg
 	return args.Get(0).(*client.SolveResult), args.Error(1)
 }
 
-func (m *MockSolverClient) Close() error {
-	return nil
-}
+// Проверка что mock реализует интерфейс
+var _ engine.SolverClientInterface = (*MockSolverClientInterface)(nil)
 
 // ============================================================
 // TEST HELPERS
@@ -101,16 +101,16 @@ func createTestGraph() *commonv1.Graph {
 		SinkId:   4,
 		Name:     "test-graph",
 		Nodes: []*commonv1.Node{
-			{Id: 1, Name: "source", Type: commonv1.NodeType_NODE_TYPE_SOURCE, X: 0, Y: 0},
+			{Id: 1, Name: "source", Type: commonv1.NodeType_NODE_TYPE_SOURCE, X: 0, Y: 0, Supply: 100},
 			{Id: 2, Name: "node2", Type: commonv1.NodeType_NODE_TYPE_INTERSECTION, X: 1, Y: 0},
 			{Id: 3, Name: "node3", Type: commonv1.NodeType_NODE_TYPE_INTERSECTION, X: 1, Y: 1},
-			{Id: 4, Name: "sink", Type: commonv1.NodeType_NODE_TYPE_SINK, X: 2, Y: 0},
+			{Id: 4, Name: "sink", Type: commonv1.NodeType_NODE_TYPE_SINK, X: 2, Y: 0, Demand: 100},
 		},
 		Edges: []*commonv1.Edge{
-			{From: 1, To: 2, Capacity: 10, Cost: 1},
-			{From: 1, To: 3, Capacity: 10, Cost: 2},
-			{From: 2, To: 4, Capacity: 10, Cost: 1},
-			{From: 3, To: 4, Capacity: 10, Cost: 1},
+			{From: 1, To: 2, Capacity: 10, Cost: 1, CurrentFlow: 8},
+			{From: 1, To: 3, Capacity: 10, Cost: 2, CurrentFlow: 10},
+			{From: 2, To: 4, Capacity: 10, Cost: 1, CurrentFlow: 8},
+			{From: 3, To: 4, Capacity: 10, Cost: 1, CurrentFlow: 10},
 		},
 		Metadata: map[string]string{"test": "value"},
 	}
@@ -129,13 +129,17 @@ func createTestSolveResult(maxFlow, totalCost float64) *client.SolveResult {
 	}
 }
 
-// SolverClientWrapper адаптер для использования mock в сервисе
-type SolverClientWrapper struct {
-	mockClient *MockSolverClient
-}
-
-func (w *SolverClientWrapper) Solve(ctx context.Context, graph *commonv1.Graph, algorithm commonv1.Algorithm, opts interface{}) (*client.SolveResult, error) {
-	return w.mockClient.Solve(ctx, graph, algorithm, opts)
+func createTestSolveResultWithGraph(maxFlow, totalCost float64, graph *commonv1.Graph) *client.SolveResult {
+	return &client.SolveResult{
+		MaxFlow:            maxFlow,
+		TotalCost:          totalCost,
+		AverageUtilization: 0.8,
+		SaturatedEdges:     2,
+		ActivePaths:        2,
+		Status:             commonv1.FlowStatus_FLOW_STATUS_OPTIMAL,
+		ComputationTimeMs:  10.5,
+		Graph:              graph,
+	}
 }
 
 // ============================================================
@@ -161,11 +165,9 @@ func TestSimulationService_Health(t *testing.T) {
 func TestSimulationService_RunWhatIf_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := new(MockSimulationRepository)
-	mockSolver := new(MockSolverClient)
+	mockSolver := new(MockSolverClientInterface)
 
-	// Baseline result
 	baselineResult := createTestSolveResult(20, 40)
-	// Modified result (после увеличения capacity)
 	modifiedResult := createTestSolveResult(25, 50)
 
 	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -173,11 +175,7 @@ func TestSimulationService_RunWhatIf_Success(t *testing.T) {
 	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(modifiedResult, nil).Once()
 
-	// Создаём реальный SolverClient для теста (нужна интеграция)
-	// В данном случае используем nil и тестируем через моки engine
-	svc := NewSimulationService(repo, nil, "1.0.0")
-	// Подменяем solverEngine на wrapper с mock
-	svc.solverClient = nil // В реальности нужен способ инжектить mock
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
 
 	req := &simulationv1.RunWhatIfRequest{
 		BaselineGraph: createTestGraph(),
@@ -197,10 +195,17 @@ func TestSimulationService_RunWhatIf_Success(t *testing.T) {
 		},
 	}
 
-	// Тест без solver client возвращает ошибку
 	resp, err := svc.RunWhatIf(ctx, req)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Baseline)
+	assert.NotNil(t, resp.Modified)
+	assert.NotNil(t, resp.Comparison)
+	assert.NotNil(t, resp.ModifiedGraph)
+	assert.NotNil(t, resp.Metadata)
+	mockSolver.AssertExpectations(t)
 }
 
 func TestSimulationService_RunWhatIf_NoGraph(t *testing.T) {
@@ -219,9 +224,209 @@ func TestSimulationService_RunWhatIf_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "baseline_graph is required")
 }
 
+func TestSimulationService_RunWhatIf_BaselineSolverError(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("solver error")).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunWhatIfRequest{
+		BaselineGraph: createTestGraph(),
+		Algorithm:     commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.RunWhatIf(ctx, req)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	mockSolver.AssertExpectations(t)
+}
+
+func TestSimulationService_RunWhatIf_ModifiedSolverError(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(20, 40)
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("solver error")).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunWhatIfRequest{
+		BaselineGraph: createTestGraph(),
+		Algorithm:     commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.RunWhatIf(ctx, req)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	mockSolver.AssertExpectations(t)
+}
+
+func TestSimulationService_RunWhatIf_WithBottleneckAnalysis(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	// Baseline с bottleneck
+	baseGraph := createTestGraph()
+	baseGraph.Edges[0].CurrentFlow = 9.5 // 95% utilization
+	baseGraph.Edges[0].Capacity = 10
+	baselineResult := createTestSolveResultWithGraph(20, 40, baseGraph)
+
+	// Modified без bottleneck
+	modGraph := createTestGraph()
+	modGraph.Edges[0].CurrentFlow = 5
+	modGraph.Edges[0].Capacity = 20
+	modifiedResult := createTestSolveResultWithGraph(25, 50, modGraph)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(modifiedResult, nil).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunWhatIfRequest{
+		BaselineGraph: createTestGraph(),
+		Modifications: []*simulationv1.Modification{
+			{
+				Type:    simulationv1.ModificationType_MODIFICATION_TYPE_UPDATE_EDGE,
+				EdgeKey: &commonv1.EdgeKey{From: 1, To: 2},
+				Target:  simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+				Change:  &simulationv1.Modification_AbsoluteValue{AbsoluteValue: 20},
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+		Options: &simulationv1.WhatIfOptions{
+			FindNewBottlenecks: true,
+		},
+	}
+
+	resp, err := svc.RunWhatIf(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	// Должны быть изменения в bottlenecks
+	mockSolver.AssertExpectations(t)
+}
+
 // ============================================================
 // COMPARE SCENARIOS TESTS
 // ============================================================
+
+func TestSimulationService_CompareScenarios_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(100, 50)
+	scenarioAResult := createTestSolveResult(120, 60)
+	scenarioBResult := createTestSolveResult(110, 55)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(scenarioAResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(scenarioBResult, nil).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.CompareScenariosRequest{
+		BaselineGraph: createTestGraph(),
+		Scenarios: []*simulationv1.Scenario{
+			{
+				Name: "Scenario A",
+				Modifications: []*simulationv1.Modification{
+					{
+						Type:    simulationv1.ModificationType_MODIFICATION_TYPE_UPDATE_EDGE,
+						EdgeKey: &commonv1.EdgeKey{From: 1, To: 2},
+						Target:  simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+						Change:  &simulationv1.Modification_Delta{Delta: 10},
+					},
+				},
+			},
+			{
+				Name: "Scenario B",
+				Modifications: []*simulationv1.Modification{
+					{
+						Type:    simulationv1.ModificationType_MODIFICATION_TYPE_UPDATE_EDGE,
+						EdgeKey: &commonv1.EdgeKey{From: 2, To: 4},
+						Target:  simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+						Change:  &simulationv1.Modification_Delta{Delta: 5},
+					},
+				},
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.CompareScenarios(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.NotNil(t, resp.Baseline)
+	assert.Len(t, resp.RankedScenarios, 2)
+	assert.Equal(t, "Scenario A", resp.BestScenario)
+	assert.NotEmpty(t, resp.Recommendation)
+	assert.NotNil(t, resp.Metadata)
+	mockSolver.AssertExpectations(t)
+}
+
+func TestSimulationService_CompareScenarios_WithROI(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(100, 50)
+	scenarioResult := createTestSolveResult(150, 75)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(scenarioResult, nil).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.CompareScenariosRequest{
+		BaselineGraph: createTestGraph(),
+		Scenarios: []*simulationv1.Scenario{
+			{
+				Name: "Investment Scenario",
+				Modifications: []*simulationv1.Modification{
+					{
+						Type:    simulationv1.ModificationType_MODIFICATION_TYPE_UPDATE_EDGE,
+						EdgeKey: &commonv1.EdgeKey{From: 1, To: 2},
+						Target:  simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+						Change:  &simulationv1.Modification_Delta{Delta: 10},
+					},
+				},
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+		Options: &simulationv1.CompareOptions{
+			CalculateRoi:            true,
+			ModificationCostPerUnit: 5.0,
+		},
+	}
+
+	resp, err := svc.CompareScenarios(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Len(t, resp.RankedScenarios, 1)
+	// ROI = (150-100) / (10*5) = 50/50 = 1.0
+	assert.InDelta(t, 1.0, resp.RankedScenarios[0].Roi, 0.01)
+	mockSolver.AssertExpectations(t)
+}
 
 func TestSimulationService_CompareScenarios_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -242,9 +447,104 @@ func TestSimulationService_CompareScenarios_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "baseline_graph is required")
 }
 
+func TestSimulationService_CompareScenarios_BaselineSolverError(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("solver error")).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.CompareScenariosRequest{
+		BaselineGraph: createTestGraph(),
+		Scenarios: []*simulationv1.Scenario{
+			{Name: "test", Modifications: nil},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.CompareScenarios(ctx, req)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	mockSolver.AssertExpectations(t)
+}
+
+func TestSimulationService_CompareScenarios_ScenarioSolverError(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(100, 50)
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("scenario solver error")).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.CompareScenariosRequest{
+		BaselineGraph: createTestGraph(),
+		Scenarios: []*simulationv1.Scenario{
+			{Name: "failing scenario", Modifications: nil},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.CompareScenarios(ctx, req)
+	require.NoError(t, err) // Ошибки сценариев не прерывают выполнение
+	assert.NotNil(t, resp)
+	assert.Empty(t, resp.RankedScenarios) // Сценарий с ошибкой не добавлен
+	mockSolver.AssertExpectations(t)
+}
+
 // ============================================================
 // MONTE CARLO TESTS
 // ============================================================
+
+func TestSimulationService_RunMonteCarlo_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	// Monte Carlo делает много вызовов solver
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunMonteCarloRequest{
+		Graph: createTestGraph(),
+		Config: &simulationv1.MonteCarloConfig{
+			NumIterations:   10, // Малое число для теста
+			ConfidenceLevel: 0.95,
+			RandomSeed:      42,
+		},
+		Uncertainties: []*simulationv1.UncertaintySpec{
+			{
+				Type:   simulationv1.UncertaintyType_UNCERTAINTY_TYPE_EDGE,
+				Edge:   &commonv1.EdgeKey{From: 1, To: 2},
+				Target: simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+				Distribution: &simulationv1.Distribution{
+					Type:   simulationv1.DistributionType_DISTRIBUTION_TYPE_NORMAL,
+					Param1: 1.0,
+					Param2: 0.1,
+				},
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.RunMonteCarlo(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.FlowStats)
+	assert.NotNil(t, resp.CostStats)
+	assert.NotNil(t, resp.Metadata)
+}
 
 func TestSimulationService_RunMonteCarlo_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -262,9 +562,72 @@ func TestSimulationService_RunMonteCarlo_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "graph is required")
 }
 
+func TestSimulationService_RunMonteCarlo_DefaultConfig(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunMonteCarloRequest{
+		Graph:     createTestGraph(),
+		Config:    nil, // Используем default
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	// Этот тест может быть долгим из-за 1000 итераций по умолчанию
+	// Поэтому просто проверяем что запрос не падает
+	resp, err := svc.RunMonteCarlo(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
 // ============================================================
 // SENSITIVITY ANALYSIS TESTS
 // ============================================================
+
+func TestSimulationService_AnalyzeSensitivity_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.AnalyzeSensitivityRequest{
+		Graph: createTestGraph(),
+		Parameters: []*simulationv1.SensitivityParameter{
+			{
+				Edge:          &commonv1.EdgeKey{From: 1, To: 2},
+				Target:        simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+				MinMultiplier: 0.5,
+				MaxMultiplier: 1.5,
+				NumSteps:      5,
+			},
+		},
+		Config: &simulationv1.SensitivityConfig{
+			Method:              simulationv1.SensitivityMethod_SENSITIVITY_METHOD_ONE_AT_A_TIME,
+			CalculateElasticity: true,
+			FindThresholds:      true,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.AnalyzeSensitivity(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.Len(t, resp.ParameterResults, 1)
+	assert.Len(t, resp.Rankings, 1)
+	assert.NotNil(t, resp.Metadata)
+	mockSolver.AssertExpectations(t)
+}
 
 func TestSimulationService_AnalyzeSensitivity_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -282,9 +645,81 @@ func TestSimulationService_AnalyzeSensitivity_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "graph is required")
 }
 
+func TestSimulationService_AnalyzeSensitivity_MultipleParameters(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.AnalyzeSensitivityRequest{
+		Graph: createTestGraph(),
+		Parameters: []*simulationv1.SensitivityParameter{
+			{
+				Edge:          &commonv1.EdgeKey{From: 1, To: 2},
+				Target:        simulationv1.ModificationTarget_MODIFICATION_TARGET_CAPACITY,
+				MinMultiplier: 0.5,
+				MaxMultiplier: 1.5,
+				NumSteps:      3,
+			},
+			{
+				Edge:          &commonv1.EdgeKey{From: 2, To: 4},
+				Target:        simulationv1.ModificationTarget_MODIFICATION_TARGET_COST,
+				MinMultiplier: 0.8,
+				MaxMultiplier: 1.2,
+				NumSteps:      3,
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.AnalyzeSensitivity(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.Len(t, resp.ParameterResults, 2)
+	assert.Len(t, resp.Rankings, 2)
+}
+
 // ============================================================
 // CRITICAL ELEMENTS TESTS
 // ============================================================
+
+func TestSimulationService_FindCriticalElements_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	// Baseline
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.FindCriticalElementsRequest{
+		Graph: createTestGraph(),
+		Config: &simulationv1.CriticalElementsConfig{
+			AnalyzeEdges:     true,
+			AnalyzeNodes:     true,
+			TopN:             5,
+			FailureThreshold: 0.1,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.FindCriticalElements(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Metadata)
+	assert.GreaterOrEqual(t, resp.ResilienceScore, 0.0)
+	assert.LessOrEqual(t, resp.ResilienceScore, 1.0)
+}
 
 func TestSimulationService_FindCriticalElements_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -302,9 +737,120 @@ func TestSimulationService_FindCriticalElements_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "graph is required")
 }
 
+func TestSimulationService_FindCriticalElements_DefaultConfig(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.FindCriticalElementsRequest{
+		Graph:     createTestGraph(),
+		Config:    nil, // Default config
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.FindCriticalElements(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+}
+
+func TestSimulationService_FindCriticalElements_WithSPOF(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	// Baseline с потоком
+	baselineResult := createTestSolveResult(100, 50)
+	// При удалении ребра поток = 0 (SPOF)
+	spofResult := createTestSolveResult(0, 0)
+	normalResult := createTestSolveResult(80, 40)
+
+	// Первый вызов - baseline
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	// Второй - первое ребро (SPOF)
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(spofResult, nil).Once()
+	// Остальные
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(normalResult, nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.FindCriticalElementsRequest{
+		Graph: createTestGraph(),
+		Config: &simulationv1.CriticalElementsConfig{
+			AnalyzeEdges:     true,
+			AnalyzeNodes:     true,
+			TopN:             10,
+			FailureThreshold: 0.05,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.FindCriticalElements(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	// Должен быть найден SPOF
+	assert.NotEmpty(t, resp.SinglePointsOfFailure)
+}
+
 // ============================================================
 // FAILURE SIMULATION TESTS
 // ============================================================
+
+func TestSimulationService_SimulateFailures_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(100, 50)
+	failureResult := createTestSolveResult(70, 35)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(failureResult, nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulateFailuresRequest{
+		Graph: createTestGraph(),
+		FailureScenarios: []*simulationv1.FailureScenario{
+			{
+				Name: "Edge Failure",
+				FailedEdges: []*commonv1.EdgeKey{
+					{From: 1, To: 2},
+				},
+				Probability: 0.1,
+			},
+			{
+				Name:        "Node Failure",
+				FailedNodes: []int64{2},
+				Probability: 0.05,
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulateFailures(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Baseline)
+	assert.Len(t, resp.ScenarioResults, 2)
+	assert.NotNil(t, resp.Stats)
+	assert.NotNil(t, resp.Metadata)
+}
 
 func TestSimulationService_SimulateFailures_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -322,9 +868,104 @@ func TestSimulationService_SimulateFailures_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "graph is required")
 }
 
+func TestSimulationService_SimulateFailures_RandomConfig(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulateFailuresRequest{
+		Graph: createTestGraph(),
+		RandomConfig: &simulationv1.RandomFailureConfig{
+			NumScenarios:            5,
+			EdgeFailureProbability:  0.2,
+			MaxSimultaneousFailures: 2,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulateFailures(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	// Должно быть 5 сценариев
+}
+
+func TestSimulationService_SimulateFailures_WithDisconnection(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	baselineResult := createTestSolveResult(100, 50)
+	disconnectedResult := createTestSolveResult(0, 0) // Сеть отключена
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(baselineResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(disconnectedResult, nil).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulateFailuresRequest{
+		Graph: createTestGraph(),
+		FailureScenarios: []*simulationv1.FailureScenario{
+			{
+				Name: "Critical Failure",
+				FailedEdges: []*commonv1.EdgeKey{
+					{From: 1, To: 2},
+					{From: 1, To: 3},
+				},
+				Probability: 0.01,
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulateFailures(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.True(t, resp.ScenarioResults[0].NetworkDisconnected)
+	assert.Greater(t, resp.Stats.ProbabilityOfDisconnection, 0.0)
+}
+
 // ============================================================
 // RESILIENCE ANALYSIS TESTS
 // ============================================================
+
+func TestSimulationService_AnalyzeResilience_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.AnalyzeResilienceRequest{
+		Graph: createTestGraph(),
+		Config: &simulationv1.ResilienceConfig{
+			MaxFailuresToTest: 1,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.AnalyzeResilience(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Metrics)
+	assert.NotNil(t, resp.NMinusOne)
+	assert.NotNil(t, resp.Metadata)
+}
 
 func TestSimulationService_AnalyzeResilience_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -346,6 +987,35 @@ func TestSimulationService_AnalyzeResilience_NoGraph(t *testing.T) {
 // TIME SIMULATION TESTS
 // ============================================================
 
+func TestSimulationService_RunTimeSimulation_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.RunTimeSimulationRequest{
+		Graph: createTestGraph(),
+		TimeConfig: &simulationv1.TimeSimulationConfig{
+			NumSteps: 5,
+			TimeStep: simulationv1.TimeStep_TIME_STEP_HOUR,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.RunTimeSimulation(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.Len(t, resp.StepResults, 5)
+	assert.NotNil(t, resp.Stats)
+	assert.NotNil(t, resp.Metadata)
+}
+
 func TestSimulationService_RunTimeSimulation_NoGraph(t *testing.T) {
 	ctx := context.Background()
 	repo := new(MockSimulationRepository)
@@ -362,9 +1032,84 @@ func TestSimulationService_RunTimeSimulation_NoGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "graph is required")
 }
 
+func TestSimulationService_RunTimeSimulation_WithPatterns(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	hourlyMultipliers := make([]float64, 24)
+	for i := range hourlyMultipliers {
+		hourlyMultipliers[i] = 1.0
+	}
+	hourlyMultipliers[8] = 1.5  // Утренний пик
+	hourlyMultipliers[18] = 1.5 // Вечерний пик
+
+	req := &simulationv1.RunTimeSimulationRequest{
+		Graph: createTestGraph(),
+		TimeConfig: &simulationv1.TimeSimulationConfig{
+			NumSteps: 3,
+			TimeStep: simulationv1.TimeStep_TIME_STEP_HOUR,
+		},
+		EdgePatterns: []*simulationv1.EdgeTimePattern{
+			{
+				Edge: &commonv1.EdgeKey{From: 1, To: 2},
+				Pattern: &simulationv1.TimePattern{
+					Type:              simulationv1.PatternType_PATTERN_TYPE_HOURLY,
+					HourlyMultipliers: hourlyMultipliers,
+				},
+			},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.RunTimeSimulation(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+}
+
 // ============================================================
 // PEAK LOAD TESTS
 // ============================================================
+
+func TestSimulationService_SimulatePeakLoad_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	normalResult := createTestSolveResult(100, 50)
+	peakResult := createTestSolveResult(70, 80) // Меньше потока, больше стоимость
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(normalResult, nil).Once()
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(peakResult, nil).Once()
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulatePeakLoadRequest{
+		Graph:             createTestGraph(),
+		DemandMultiplier:  1.5,
+		CapacityReduction: 0.8,
+		Algorithm:         commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulatePeakLoad(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.NormalResult)
+	assert.NotNil(t, resp.PeakResult)
+	assert.NotNil(t, resp.Comparison)
+	assert.NotNil(t, resp.Metadata)
+}
 
 func TestSimulationService_SimulatePeakLoad_NoGraph(t *testing.T) {
 	ctx := context.Background()
@@ -380,6 +1125,56 @@ func TestSimulationService_SimulatePeakLoad_NoGraph(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Contains(t, err.Error(), "graph is required")
+}
+
+func TestSimulationService_SimulatePeakLoad_WithAffectedNodes(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulatePeakLoadRequest{
+		Graph:            createTestGraph(),
+		DemandMultiplier: 2.0,
+		AffectedNodes:    []int64{1, 4}, // Только source и sink
+		Algorithm:        commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulatePeakLoad(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
+}
+
+func TestSimulationService_SimulatePeakLoad_WithAffectedEdges(t *testing.T) {
+	ctx := context.Background()
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	mockSolver.On("Solve", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(createTestSolveResult(100, 50), nil)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "1.0.0")
+
+	req := &simulationv1.SimulatePeakLoadRequest{
+		Graph:             createTestGraph(),
+		CapacityReduction: 0.5,
+		AffectedEdges: []*commonv1.EdgeKey{
+			{From: 1, To: 2},
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	resp, err := svc.SimulatePeakLoad(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Success)
 }
 
 // ============================================================
@@ -665,7 +1460,7 @@ func TestSimulationService_ListSimulations_Pagination(t *testing.T) {
 	req := &simulationv1.ListSimulationsRequest{
 		UserId: "user-123",
 		Pagination: &commonv1.PaginationRequest{
-			Page:     6, // offset = (6-1)*2 = 10
+			Page:     6,
 			PageSize: 2,
 		},
 	}
@@ -677,7 +1472,7 @@ func TestSimulationService_ListSimulations_Pagination(t *testing.T) {
 	assert.Equal(t, int32(6), resp.Pagination.CurrentPage)
 	assert.Equal(t, int32(2), resp.Pagination.PageSize)
 	assert.Equal(t, int64(25), resp.Pagination.TotalItems)
-	assert.Equal(t, int32(13), resp.Pagination.TotalPages) // ceil(25/2) = 13
+	assert.Equal(t, int32(13), resp.Pagination.TotalPages)
 	assert.True(t, resp.Pagination.HasNext)
 	assert.True(t, resp.Pagination.HasPrevious)
 	repo.AssertExpectations(t)
@@ -799,7 +1594,6 @@ func TestSimulationService_RemoveEdgeFromGraph(t *testing.T) {
 	for _, edge := range result.Edges {
 		assert.False(t, edge.From == 1 && edge.To == 2)
 	}
-	// Исходный граф не должен измениться
 	assert.Equal(t, 4, len(graph.Edges))
 }
 
@@ -809,19 +1603,16 @@ func TestSimulationService_RemoveNodeFromGraph(t *testing.T) {
 
 	result := svc.removeNodeFromGraph(graph, 2)
 
-	// Узел 2 должен быть удалён
 	assert.Equal(t, 3, len(result.Nodes))
 	for _, node := range result.Nodes {
 		assert.NotEqual(t, int64(2), node.Id)
 	}
 
-	// Рёбра связанные с узлом 2 должны быть удалены
 	for _, edge := range result.Edges {
 		assert.NotEqual(t, int64(2), edge.From)
 		assert.NotEqual(t, int64(2), edge.To)
 	}
 
-	// Исходный граф не должен измениться
 	assert.Equal(t, 4, len(graph.Nodes))
 	assert.Equal(t, 4, len(graph.Edges))
 }
@@ -830,19 +1621,15 @@ func TestSimulationService_CountAffectedEdges(t *testing.T) {
 	svc := NewSimulationService(nil, nil, "1.0.0")
 	graph := createTestGraph()
 
-	// Узел 2 связан с рёбрами: 1->2, 2->4
 	count := svc.countAffectedEdges(graph, 2)
 	assert.Equal(t, 2, count)
 
-	// Узел 1 связан с рёбрами: 1->2, 1->3
 	count = svc.countAffectedEdges(graph, 1)
 	assert.Equal(t, 2, count)
 
-	// Узел 4 связан с рёбрами: 2->4, 3->4
 	count = svc.countAffectedEdges(graph, 4)
 	assert.Equal(t, 2, count)
 
-	// Несуществующий узел
 	count = svc.countAffectedEdges(graph, 999)
 	assert.Equal(t, 0, count)
 }
@@ -861,7 +1648,7 @@ func TestSimulationService_CalculateResilienceScore(t *testing.T) {
 		{0, 0, 10, 5, 1.0, 1.0},
 		{2, 1, 10, 5, 0.7, 0.85},
 		{5, 5, 10, 10, 0.4, 0.6},
-		{0, 0, 0, 0, 1.0, 1.0}, // Edge case
+		{0, 0, 0, 0, 1.0, 1.0},
 	}
 
 	for _, tt := range tests {
@@ -909,11 +1696,9 @@ func TestSimulationService_SortCriticalNodes(t *testing.T) {
 func TestSimulationService_GenerateRecommendation(t *testing.T) {
 	svc := NewSimulationService(nil, nil, "1.0.0")
 
-	// С лучшим сценарием
 	rec := svc.generateRecommendation(nil, "Scenario A")
 	assert.Contains(t, rec, "Scenario A")
 
-	// Без лучшего сценария
 	rec = svc.generateRecommendation(nil, "")
 	assert.Contains(t, rec, "худшие результаты")
 }
@@ -932,16 +1717,16 @@ func TestSimulationService_CalculateModificationCost(t *testing.T) {
 		},
 		{
 			Type:   simulationv1.ModificationType_MODIFICATION_TYPE_UPDATE_EDGE,
-			Change: &simulationv1.Modification_Delta{Delta: -3}, // Negative delta shouldn't count
+			Change: &simulationv1.Modification_Delta{Delta: -3},
 		},
 		{
 			Type:   simulationv1.ModificationType_MODIFICATION_TYPE_REMOVE_EDGE,
-			Change: &simulationv1.Modification_Delta{Delta: 10}, // Wrong type
+			Change: &simulationv1.Modification_Delta{Delta: 10},
 		},
 	}
 
 	cost := svc.calculateModificationCost(mods, 100.0)
-	assert.Equal(t, 1500.0, cost) // (10 + 5) * 100
+	assert.Equal(t, 1500.0, cost)
 }
 
 func TestSimulationService_GenerateRandomFailureScenarios(t *testing.T) {
@@ -957,11 +1742,10 @@ func TestSimulationService_GenerateRandomFailureScenarios(t *testing.T) {
 	scenarios := svc.generateRandomFailureScenarios(graph, config)
 
 	assert.Len(t, scenarios, 5)
-	for i, s := range scenarios {
+	for _, s := range scenarios {
 		assert.Contains(t, s.Name, "Random Scenario")
 		assert.LessOrEqual(t, len(s.FailedEdges), 2)
-		assert.InDelta(t, 0.2, s.Probability, 0.01) // 1/5 = 0.2
-		t.Logf("Scenario %d: %s with %d failed edges", i, s.Name, len(s.FailedEdges))
+		assert.InDelta(t, 0.2, s.Probability, 0.01)
 	}
 }
 
@@ -970,9 +1754,9 @@ func TestSimulationService_GenerateRandomFailureScenarios_DefaultConfig(t *testi
 	graph := createTestGraph()
 
 	config := &simulationv1.RandomFailureConfig{
-		NumScenarios:            0, // Default to 10
-		EdgeFailureProbability:  0, // Default to 0.1
-		MaxSimultaneousFailures: 0, // Default to 3
+		NumScenarios:            0,
+		EdgeFailureProbability:  0,
+		MaxSimultaneousFailures: 0,
 	}
 
 	scenarios := svc.generateRandomFailureScenarios(graph, config)
@@ -1006,7 +1790,6 @@ func TestSimulationService_CalculateFailureStats(t *testing.T) {
 
 	stats := svc.calculateFailureStats(results, 100)
 
-	// Expected loss: 0.3*(100-80) + 0.5*(100-60) + 0.2*(100-0) = 6 + 20 + 20 = 46
 	assert.InDelta(t, 46.0, stats.ExpectedFlowLoss, 0.1)
 	assert.Equal(t, 100.0, stats.MaxFlowLoss)
 	assert.InDelta(t, 1.0/3.0, stats.ProbabilityOfDisconnection, 0.01)
@@ -1028,10 +1811,9 @@ func TestSimulationService_GenerateResilienceRecommendations(t *testing.T) {
 		{ScenarioName: "Minor", NetworkDisconnected: false},
 	}
 
-	// Граф с низким резервированием
 	graph := &commonv1.Graph{
 		Nodes: []*commonv1.Node{{Id: 1}, {Id: 2}, {Id: 3}},
-		Edges: []*commonv1.Edge{{From: 1, To: 2}, {From: 2, To: 3}}, // 2 edges / 3 nodes < 2
+		Edges: []*commonv1.Edge{{From: 1, To: 2}, {From: 2, To: 3}},
 	}
 
 	recs := svc.generateResilienceRecommendations(results, graph)
@@ -1062,9 +1844,9 @@ func TestBottleneckChangeAnalyzer(t *testing.T) {
 	baseResult := &client.SolveResult{
 		Graph: &commonv1.Graph{
 			Edges: []*commonv1.Edge{
-				{From: 1, To: 2, Capacity: 100, CurrentFlow: 95}, // Bottleneck
-				{From: 2, To: 3, Capacity: 100, CurrentFlow: 50}, // Not bottleneck
-				{From: 3, To: 4, Capacity: 100, CurrentFlow: 90}, // Near bottleneck
+				{From: 1, To: 2, Capacity: 100, CurrentFlow: 95},
+				{From: 2, To: 3, Capacity: 100, CurrentFlow: 50},
+				{From: 3, To: 4, Capacity: 100, CurrentFlow: 90},
 			},
 		},
 	}
@@ -1072,9 +1854,9 @@ func TestBottleneckChangeAnalyzer(t *testing.T) {
 	modResult := &client.SolveResult{
 		Graph: &commonv1.Graph{
 			Edges: []*commonv1.Edge{
-				{From: 1, To: 2, Capacity: 100, CurrentFlow: 50}, // Resolved
-				{From: 2, To: 3, Capacity: 100, CurrentFlow: 95}, // New bottleneck
-				{From: 3, To: 4, Capacity: 100, CurrentFlow: 98}, // Worsened (now bottleneck)
+				{From: 1, To: 2, Capacity: 100, CurrentFlow: 50},
+				{From: 2, To: 3, Capacity: 100, CurrentFlow: 95},
+				{From: 3, To: 4, Capacity: 100, CurrentFlow: 98},
 			},
 		},
 	}
@@ -1088,7 +1870,6 @@ func TestBottleneckChangeAnalyzer(t *testing.T) {
 		changeTypes[c.ChangeType]++
 	}
 
-	// Должны быть: RESOLVED (1->2), NEW (2->3), возможно NEW/WORSENED (3->4)
 	assert.Contains(t, changeTypes, simulationv1.BottleneckChangeType_BOTTLENECK_CHANGE_TYPE_RESOLVED)
 	assert.Contains(t, changeTypes, simulationv1.BottleneckChangeType_BOTTLENECK_CHANGE_TYPE_NEW)
 }
@@ -1122,4 +1903,29 @@ func TestSimulationService_SortScenariosByFlow(t *testing.T) {
 	assert.Equal(t, "B", scenarios[0].Result.Name)
 	assert.Equal(t, "C", scenarios[1].Result.Name)
 	assert.Equal(t, "A", scenarios[2].Result.Name)
+}
+
+// ============================================================
+// CONSTRUCTOR TESTS
+// ============================================================
+
+func TestNewSimulationService(t *testing.T) {
+	repo := new(MockSimulationRepository)
+	svc := NewSimulationService(repo, nil, "1.0.0")
+
+	assert.NotNil(t, svc)
+	assert.Equal(t, "1.0.0", svc.version)
+	assert.NotNil(t, svc.repo)
+}
+
+func TestNewSimulationServiceWithInterface(t *testing.T) {
+	repo := new(MockSimulationRepository)
+	mockSolver := new(MockSolverClientInterface)
+
+	svc := NewSimulationServiceWithInterface(repo, mockSolver, "2.0.0")
+
+	assert.NotNil(t, svc)
+	assert.Equal(t, "2.0.0", svc.version)
+	assert.NotNil(t, svc.repo)
+	assert.NotNil(t, svc.solverClient)
 }

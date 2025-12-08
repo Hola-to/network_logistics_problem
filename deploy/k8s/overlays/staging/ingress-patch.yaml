@@ -1,0 +1,13 @@
+# deploy/k8s/overlays/staging/ingress-patch.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: logistics-ingress
+spec:
+  tls:
+    - hosts:
+        - api-staging.logistics.example.com
+      secretName: logistics-staging-tls
+  rules:
+    - host: api-staging.logistics.example.com

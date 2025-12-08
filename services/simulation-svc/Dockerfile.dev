@@ -1,0 +1,44 @@
+FROM golang:1.25.4-alpine
+
+# Установка air для hot-reload
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+# Копируем go.mod для кэширования
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Копируем код (будет перезаписан volume в docker-compose)
+# Минимальный набор файлов
+# Сгенерированные proto файлы
+COPY gen/go/logistics/audit/ ./gen/go/logistics/audit/
+COPY gen/go/logistics/common/ ./gen/go/logistics/common/
+COPY gen/go/logistics/optimization/ ./gen/go/logistics/optimization/
+COPY gen/go/logistics/simulation/ ./gen/go/logistics/simulation/
+COPY gen/openapi/ ./gen/openapi/
+
+# Общие пакеты (pkg)
+COPY pkg/apperror/ ./pkg/apperror/
+COPY pkg/audit/ ./pkg/audit/
+COPY pkg/client/ ./pkg/client/
+COPY pkg/config/ ./pkg/config/
+COPY pkg/database/ ./pkg/database/
+COPY pkg/interceptors/ ./pkg/interceptors/
+COPY pkg/logger/ ./pkg/logger/
+COPY pkg/metrics/ ./pkg/metrics/
+COPY pkg/ratelimit/ ./pkg/ratelimit/
+COPY pkg/server/ ./pkg/server/
+COPY pkg/swagger/ ./pkg/swagger/
+COPY pkg/telemetry/ ./pkg/telemetry/
+
+# Сервисы
+COPY services/simulation-svc/ ./services/simulation-svc/
+
+# Migrations
+COPY migrations/ ./migrations/
+
+EXPOSE 50058 8088
+
+# Конфигурация air
+CMD ["air", "-c", "services/simulation-svc/.air.toml"]

@@ -1,0 +1,27 @@
+# services/validation-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  validation-svc:
+    build:
+      context: ../..
+      dockerfile: services/validation-svc/Dockerfile.dev
+    ports:
+      - "50052:50052"
+      - "8052:8052"
+    environment:
+      - APP_NAME=validation-svc
+      - APP_ENV=development
+      - GRPC_PORT=50052
+      - METRICS_PORT=8052
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+networks:
+  logistics-net:
+    driver: bridge

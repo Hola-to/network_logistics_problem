@@ -1,0 +1,58 @@
+# services/history-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  history-svc:
+    build:
+      context: ../..
+      dockerfile: services/history-svc/Dockerfile.dev
+    ports:
+      - "50056:50056"
+      - "8056:8056"
+    environment:
+      - APP_NAME=history-svc
+      - APP_ENV=development
+      - GRPC_PORT=50056
+      - METRICS_PORT=8056
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - DATABASE_DRIVER=postgres
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=logistics
+      - DATABASE_PASSWORD=logistics
+      - DATABASE_NAME=logistics
+      - DATABASE_AUTO_MIGRATE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=logistics
+      - POSTGRES_PASSWORD=logistics
+      - POSTGRES_DB=logistics
+    ports:
+      - "5436:5432"
+    volumes:
+      - history_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics-net
+
+volumes:
+  history_postgres_data:
+
+networks:
+  logistics-net:
+    driver: bridge

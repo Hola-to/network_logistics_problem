@@ -1,3 +1,4 @@
+// services/simulation-svc/internal/engine/time_simulation.go
 package engine
 
 import (
@@ -10,19 +11,18 @@ import (
 
 	commonv1 "logistics/gen/go/logistics/common/v1"
 	simulationv1 "logistics/gen/go/logistics/simulation/v1"
-	"logistics/pkg/client"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TimeSimulationEngine движок временной симуляции
 type TimeSimulationEngine struct {
-	solverClient *client.SolverClient
+	solverClient SolverClientInterface // Изменено на интерфейс
 	rng          *rand.Rand
 }
 
 // NewTimeSimulationEngine создаёт новый движок
-func NewTimeSimulationEngine(solverClient *client.SolverClient) *TimeSimulationEngine {
+func NewTimeSimulationEngine(solverClient SolverClientInterface) *TimeSimulationEngine {
 	return &TimeSimulationEngine{
 		solverClient: solverClient,
 		rng:          rand.New(rand.NewSource(time.Now().UnixNano())),

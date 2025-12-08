@@ -12,11 +12,11 @@ import (
 
 // ResilienceEngine движок анализа устойчивости
 type ResilienceEngine struct {
-	solverClient *client.SolverClient
+	solverClient SolverClientInterface // Изменено на интерфейс
 }
 
 // NewResilienceEngine создаёт новый движок
-func NewResilienceEngine(solverClient *client.SolverClient) *ResilienceEngine {
+func NewResilienceEngine(solverClient SolverClientInterface) *ResilienceEngine {
 	return &ResilienceEngine{
 		solverClient: solverClient,
 	}

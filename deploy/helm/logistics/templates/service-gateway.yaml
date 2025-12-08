@@ -1,0 +1,16 @@
+# deploy/helm/logistics-platform/templates/service-gateway.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "logistics.fullname" . }}-gateway
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.ports.gateway }}
+  selector:
+    app: {{ include "logistics.fullname" . }}-gateway

@@ -1,0 +1,63 @@
+# deploy/helm/logistics-platform/values-production.yaml
+
+common:
+  env: production
+  logLevel: info
+  tracing:
+    sampleRate: "0.1"
+
+image:
+  tag: v1.0.0
+
+replicaCount:
+  gateway: 5
+  solver: 3
+  validation: 2
+  analytics: 2
+  auth: 3
+  history: 2
+  audit: 2
+  simulation: 2
+  report: 2
+
+resources:
+  gateway:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  solver:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+autoscaling:
+  enabled: true
+  gateway:
+    minReplicas: 5
+    maxReplicas: 50
+  solver:
+    minReplicas: 3
+    maxReplicas: 20
+
+postgresql:
+  primary:
+    persistence:
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+
+redis:
+  master:
+    persistence:
+      size: 5Gi

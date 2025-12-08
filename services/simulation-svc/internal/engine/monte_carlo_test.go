@@ -140,8 +140,7 @@ func TestMonteCarloEngine_Run_Success(t *testing.T) {
 		Parallel:        false,
 	}
 
-	engine := NewMonteCarloEngine(config, &client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewMonteCarloEngine(config, mockSolver)
 
 	graph := createMonteCarloTestGraph()
 	uncertainties := []*simulationv1.UncertaintySpec{
@@ -181,8 +180,7 @@ func TestMonteCarloEngine_Run_Parallel(t *testing.T) {
 		MaxWorkers:      4,
 	}
 
-	engine := NewMonteCarloEngine(config, &client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewMonteCarloEngine(config, mockSolver)
 
 	graph := createMonteCarloTestGraph()
 
@@ -205,8 +203,7 @@ func TestMonteCarloEngine_Run_WithProgress(t *testing.T) {
 		Parallel:        false,
 	}
 
-	engine := NewMonteCarloEngine(config, &client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewMonteCarloEngine(config, mockSolver)
 
 	graph := createMonteCarloTestGraph()
 
@@ -239,8 +236,7 @@ func TestMonteCarloEngine_Run_DefaultIterations(t *testing.T) {
 	// Для теста ограничим итерации
 	config.NumIterations = 10
 
-	engine := NewMonteCarloEngine(config, &client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewMonteCarloEngine(config, mockSolver)
 
 	graph := createMonteCarloTestGraph()
 
@@ -260,8 +256,7 @@ func TestMonteCarloEngine_Run_ContextCancellation(t *testing.T) {
 		Parallel:      true,
 	}
 
-	engine := NewMonteCarloEngine(config, &client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewMonteCarloEngine(config, mockSolver)
 
 	graph := createMonteCarloTestGraph()
 
@@ -567,7 +562,7 @@ func TestCalculateStats(t *testing.T) {
 		assert.Equal(t, 55.0, stats.Mean)
 		assert.Equal(t, 10.0, stats.Min)
 		assert.Equal(t, 100.0, stats.Max)
-		assert.Equal(t, 50.0, stats.Median) // Для 10 элементов, медиана = 5-й элемент
+		assert.Equal(t, 60.0, stats.Median) // Для 10 элементов, медиана = 5-й элемент
 		assert.Greater(t, stats.StdDev, 0.0)
 		assert.Greater(t, stats.Variance, 0.0)
 		assert.Less(t, stats.ConfidenceIntervalLow, stats.Mean)

@@ -12,19 +12,21 @@ import (
 
 	commonv1 "logistics/gen/go/logistics/common/v1"
 	simulationv1 "logistics/gen/go/logistics/simulation/v1"
-	"logistics/pkg/client"
 )
 
 // MonteCarloEngine движок Monte Carlo симуляции
 type MonteCarloEngine struct {
 	config       *simulationv1.MonteCarloConfig
 	rng          *rand.Rand
-	solverClient *client.SolverClient
+	solverClient SolverClientInterface // Изменено на интерфейс
 }
 
 // NewMonteCarloEngine создаёт новый движок
-func NewMonteCarloEngine(config *simulationv1.MonteCarloConfig, solverClient *client.SolverClient) *MonteCarloEngine {
-	seed := config.RandomSeed
+func NewMonteCarloEngine(config *simulationv1.MonteCarloConfig, solverClient SolverClientInterface) *MonteCarloEngine {
+	seed := int64(0)
+	if config != nil {
+		seed = config.RandomSeed
+	}
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}

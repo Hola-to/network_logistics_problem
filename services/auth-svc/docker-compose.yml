@@ -1,0 +1,61 @@
+# services/auth-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  auth-svc:
+    build:
+      context: ../..
+      dockerfile: services/auth-svc/Dockerfile.dev
+    ports:
+      - "50055:50055"
+      - "8055:8055"
+    environment:
+      - APP_NAME=auth-svc
+      - APP_ENV=development
+      - GRPC_PORT=50055
+      - METRICS_PORT=8055
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - DATABASE_DRIVER=postgres
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=logistics
+      - DATABASE_PASSWORD=logistics
+      - DATABASE_NAME=logistics
+      - DATABASE_AUTO_MIGRATE=true
+      - JWT_SECRET=dev-secret-key-change-in-production
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=168h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=logistics
+      - POSTGRES_PASSWORD=logistics
+      - POSTGRES_DB=logistics
+    ports:
+      - "5435:5432"
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics-net
+
+volumes:
+  auth_postgres_data:
+
+networks:
+  logistics-net:
+    driver: bridge

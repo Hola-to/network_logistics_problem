@@ -13,11 +13,6 @@ import (
 	"logistics/pkg/logger"
 )
 
-// SolverClientInterface интерфейс для solver клиента
-type SolverClientInterface interface {
-	Solve(ctx context.Context, graph *commonv1.Graph, algorithm commonv1.Algorithm, opts interface{}) (*client.SolveResult, error)
-}
-
 // SensitivityEngine движок анализа чувствительности
 type SensitivityEngine struct {
 	solverClient SolverClientInterface

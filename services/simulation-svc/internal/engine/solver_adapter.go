@@ -9,7 +9,7 @@ import (
 	"logistics/pkg/client"
 )
 
-// SolverClientAdapter адаптирует *client.SolverClient к интерфейсу
+// SolverClientAdapter адаптирует *client.SolverClient к SolverClientInterface
 type SolverClientAdapter struct {
 	client *client.SolverClient
 }
@@ -29,3 +29,6 @@ func (a *SolverClientAdapter) Solve(ctx context.Context, graph *commonv1.Graph, 
 	}
 	return a.client.Solve(ctx, graph, algorithm, solveOpts)
 }
+
+// Проверка что адаптер реализует интерфейс
+var _ SolverClientInterface = (*SolverClientAdapter)(nil)

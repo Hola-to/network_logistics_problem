@@ -1,0 +1,44 @@
+# deploy/k8s/base/configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logistics-config
+  namespace: logistics
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # Database
+  DATABASE_DRIVER: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_SSL_MODE: "require"
+  DATABASE_AUTO_MIGRATE: "false"
+
+  # Cache
+  CACHE_ENABLED: "true"
+  CACHE_DRIVER: "redis"
+  CACHE_DEFAULT_TTL: "5m"
+
+  # Tracing
+  TRACING_ENABLED: "true"
+  TRACING_SAMPLE_RATE: "0.1"
+
+  # Services discovery
+  SERVICES_SOLVER_HOST: "solver-svc"
+  SERVICES_SOLVER_PORT: "50054"
+  SERVICES_ANALYTICS_HOST: "analytics-svc"
+  SERVICES_ANALYTICS_PORT: "50053"
+  SERVICES_VALIDATION_HOST: "validation-svc"
+  SERVICES_VALIDATION_PORT: "50052"
+  SERVICES_HISTORY_HOST: "history-svc"
+  SERVICES_HISTORY_PORT: "50056"
+  SERVICES_AUTH_HOST: "auth-svc"
+  SERVICES_AUTH_PORT: "50055"
+  SERVICES_SIMULATION_HOST: "simulation-svc"
+  SERVICES_SIMULATION_PORT: "50058"
+  SERVICES_REPORT_HOST: "report-svc"
+  SERVICES_REPORT_PORT: "50059"
+  SERVICES_AUDIT_HOST: "audit-svc"
+  SERVICES_AUDIT_PORT: "50057"

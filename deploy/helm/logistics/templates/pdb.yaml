@@ -1,0 +1,40 @@
+# deploy/helm/logistics-platform/templates/pdb.yaml
+
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "logistics.fullname" . }}-gateway-pdb
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.gateway.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ include "logistics.fullname" . }}-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "logistics.fullname" . }}-solver-pdb
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.solver.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ include "logistics.fullname" . }}-solver
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "logistics.fullname" . }}-auth-pdb
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.auth.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ include "logistics.fullname" . }}-auth
+{{- end }}

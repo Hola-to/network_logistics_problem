@@ -105,7 +105,9 @@ func createResilienceTestGraph() *commonv1.Graph {
 
 func TestNewResilienceEngine(t *testing.T) {
 	t.Run("with_client", func(t *testing.T) {
-		engine := NewResilienceEngine(&client.SolverClient{})
+		mockSolver := NewResilienceMockSolver()
+
+		engine := NewResilienceEngine(mockSolver)
 		assert.NotNil(t, engine)
 	})
 

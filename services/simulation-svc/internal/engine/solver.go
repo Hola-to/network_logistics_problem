@@ -12,13 +12,26 @@ import (
 
 // SolverEngine обёртка над solver клиентом
 type SolverEngine struct {
-	client *client.SolverClient
+	client      *client.SolverClient
+	clientIface SolverClientInterface
 }
 
-// NewSolverEngine создаёт новый движок
+// NewSolverEngine создаёт новый движок с конкретным клиентом
 func NewSolverEngine(solverClient *client.SolverClient) *SolverEngine {
+	var iface SolverClientInterface
+	if solverClient != nil {
+		iface = NewSolverClientAdapter(solverClient)
+	}
 	return &SolverEngine{
-		client: solverClient,
+		client:      solverClient,
+		clientIface: iface,
+	}
+}
+
+// NewSolverEngineWithInterface создаёт движок с интерфейсом (для тестов)
+func NewSolverEngineWithInterface(solverClient SolverClientInterface) *SolverEngine {
+	return &SolverEngine{
+		clientIface: solverClient,
 	}
 }
 
@@ -27,14 +40,14 @@ type SolveResult = client.SolveResult
 
 // Solve решает задачу потока
 func (e *SolverEngine) Solve(ctx context.Context, graph *commonv1.Graph, algorithm commonv1.Algorithm) (*SolveResult, error) {
-	if e.client == nil {
+	if e.clientIface == nil {
 		return nil, fmt.Errorf("solver client not initialized")
 	}
 
 	// Сбрасываем потоки
 	ResetFlow(graph)
 
-	return e.client.Solve(ctx, graph, algorithm, nil)
+	return e.clientIface.Solve(ctx, graph, algorithm, nil)
 }
 
 // ToScenarioResult конвертирует результат в proto

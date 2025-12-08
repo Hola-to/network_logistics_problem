@@ -1,0 +1,118 @@
+# deploy/k8s/base/services/solver.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: solver-svc
+  namespace: logistics
+  labels:
+    app: solver-svc
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: solver-svc
+  template:
+    metadata:
+      labels:
+        app: solver-svc
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8054"
+    spec:
+      serviceAccountName: logistics-service
+      containers:
+        - name: solver-svc
+          image: solver-svc:latest
+          ports:
+            - name: grpc
+              containerPort: 50054
+            - name: metrics
+              containerPort: 8054
+          envFrom:
+            - configMapRef:
+                name: logistics-config
+          env:
+            - name: APP_NAME
+              value: "solver-svc"
+            - name: GRPC_PORT
+              value: "50054"
+            - name: METRICS_PORT
+              value: "8054"
+            - name: CACHE_REDIS_ADDR
+              value: "redis:6379"
+            - name: CACHE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logistics-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            grpc:
+              port: 50054
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: 50054
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: solver-svc
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: solver-svc
+  namespace: logistics
+spec:
+  selector:
+    app: solver-svc
+  ports:
+    - name: grpc
+      port: 50054
+      targetPort: 50054
+    - name: metrics
+      port: 8054
+      targetPort: 8054
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: solver-svc-hpa
+  namespace: logistics
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: solver-svc
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

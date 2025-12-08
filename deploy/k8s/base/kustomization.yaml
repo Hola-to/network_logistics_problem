@@ -1,0 +1,30 @@
+# deploy/k8s/base/kustomization.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: logistics
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - rbac.yaml
+  - postgres.yaml
+  - redis.yaml
+  - services/solver.yaml
+  - services/validation.yaml
+  - services/analytics.yaml
+  - services/auth.yaml
+  - services/history.yaml
+  - services/audit.yaml
+  - services/simulation.yaml
+  - services/report.yaml
+  - services/gateway.yaml
+  - ingress.yaml
+  - network-policy.yaml
+  - pod-disruption-budget.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: logistics
+  app.kubernetes.io/managed-by: kustomize

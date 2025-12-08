@@ -1,0 +1,9 @@
+# deploy/k8s/base/namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logistics
+  labels:
+    app.kubernetes.io/name: logistics-platform
+    app.kubernetes.io/part-of: logistics

@@ -28,7 +28,7 @@ var startTime = time.Now()
 type SimulationService struct {
 	simulationv1.UnimplementedSimulationServiceServer
 	repo         repository.SimulationRepository
-	solverClient *client.SolverClient
+	solverClient engine.SolverClientInterface // Изменено на интерфейс
 	version      string
 
 	// Движки
@@ -51,11 +51,28 @@ func NewSimulationService(
 
 	return &SimulationService{
 		repo:              repo,
-		solverClient:      solverClient,
+		solverClient:      solverInterface,
 		version:           version,
 		solverEngine:      engine.NewSolverEngine(solverClient),
-		resilienceEngine:  engine.NewResilienceEngine(solverClient),
+		resilienceEngine:  engine.NewResilienceEngine(solverInterface),
 		sensitivityEngine: engine.NewSensitivityEngine(solverInterface),
+		timeEngine:        engine.NewTimeSimulationEngine(solverInterface),
+	}
+}
+
+// NewSimulationServiceWithInterface создаёт сервис с интерфейсом (для тестов)
+func NewSimulationServiceWithInterface(
+	repo repository.SimulationRepository,
+	solverClient engine.SolverClientInterface,
+	version string,
+) *SimulationService {
+	return &SimulationService{
+		repo:              repo,
+		solverClient:      solverClient,
+		version:           version,
+		solverEngine:      engine.NewSolverEngineWithInterface(solverClient),
+		resilienceEngine:  engine.NewResilienceEngine(solverClient),
+		sensitivityEngine: engine.NewSensitivityEngine(solverClient),
 		timeEngine:        engine.NewTimeSimulationEngine(solverClient),
 	}
 }
@@ -257,6 +274,7 @@ func (s *SimulationService) RunMonteCarlo(
 		}
 	}
 
+	// Используем интерфейс вместо конкретного клиента
 	mcEngine := engine.NewMonteCarloEngine(config, s.solverClient)
 	result, err := mcEngine.Run(ctx, req.Graph, req.Uncertainties, req.Algorithm, nil)
 	if err != nil {
@@ -302,7 +320,7 @@ func (s *SimulationService) RunMonteCarloStream(
 	progressChan := make(chan *simulationv1.MonteCarloProgress, 100)
 	errChan := make(chan error, 1)
 
-	// Запускаем в горутине
+	// Запускаем в горутине - используем интерфейс
 	go func() {
 		mcEngine := engine.NewMonteCarloEngine(config, s.solverClient)
 		_, err := mcEngine.Run(ctx, req.Graph, req.Uncertainties, req.Algorithm, progressChan)

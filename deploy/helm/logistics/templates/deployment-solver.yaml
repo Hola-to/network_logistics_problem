@@ -1,0 +1,61 @@
+# deploy/helm/logistics-platform/templates/deployment-solver.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "logistics.fullname" . }}-solver
+  labels:
+    {{- include "logistics.serviceLabels" (dict "component" "solver" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount.solver }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "logistics.fullname" . }}-solver
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metricsPorts.solver | quote }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        app: {{ include "logistics.fullname" . }}-solver
+    spec:
+      serviceAccountName: {{ include "logistics.serviceAccountName" . }}
+      containers:
+        - name: solver
+          image: {{ include "logistics.image" (dict "global" .Values.global "service" "solver-svc" "tag" .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.ports.solver }}
+            - name: metrics
+              containerPort: {{ .Values.metricsPorts.solver }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "logistics.fullname" . }}-config
+          env:
+            - name: APP_NAME
+              value: "solver-svc"
+            - name: GRPC_PORT
+              value: {{ .Values.ports.solver | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.metricsPorts.solver | quote }}
+            - name: CACHE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "logistics.fullname" . }}-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            {{- toYaml .Values.resources.solver | nindent 12 }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.ports.solver }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: {{ .Values.ports.solver }}
+            initialDelaySeconds: 5
+            periodSeconds: 5

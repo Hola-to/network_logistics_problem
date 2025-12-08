@@ -1,0 +1,60 @@
+# services/report-svc/docker-compose.yml
+
+version: "3.8"
+
+services:
+  report-svc:
+    build:
+      context: ../..
+      dockerfile: services/report-svc/Dockerfile.dev
+    ports:
+      - "50059:50059"
+      - "8059:8059"
+    environment:
+      - APP_NAME=report-svc
+      - APP_ENV=development
+      - GRPC_PORT=50059
+      - METRICS_PORT=8059
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+      - DATABASE_DRIVER=postgres
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=logistics
+      - DATABASE_PASSWORD=logistics
+      - DATABASE_NAME=logistics
+      - DATABASE_AUTO_MIGRATE=true
+      - REPORT_DEFAULT_TTL=24h
+      - REPORT_CLEANUP_INTERVAL=1h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../..:/app
+    networks:
+      - logistics-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=logistics
+      - POSTGRES_PASSWORD=logistics
+      - POSTGRES_DB=logistics
+    ports:
+      - "5439:5432"
+    volumes:
+      - report_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - logistics-net
+
+volumes:
+  report_postgres_data:
+
+networks:
+  logistics-net:
+    driver: bridge

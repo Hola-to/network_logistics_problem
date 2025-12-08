@@ -1,0 +1,63 @@
+# deploy/k8s/overlays/production/kustomization.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: logistics
+
+resources:
+  - ../../base
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /data/APP_ENV
+        value: production
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: info
+      - op: replace
+        path: /data/TRACING_SAMPLE_RATE
+        value: "0.1"
+    target:
+      kind: ConfigMap
+      name: logistics-config
+
+  - path: resources-patch.yaml
+
+replicas:
+  - name: gateway-svc
+    count: 5
+  - name: solver-svc
+    count: 3
+  - name: auth-svc
+    count: 3
+
+images:
+  - name: solver-svc
+    newName: ghcr.io/your-org/solver-svc
+    newTag: v1.0.0
+  - name: validation-svc
+    newName: ghcr.io/your-org/validation-svc
+    newTag: v1.0.0
+  - name: analytics-svc
+    newName: ghcr.io/your-org/analytics-svc
+    newTag: v1.0.0
+  - name: auth-svc
+    newName: ghcr.io/your-org/auth-svc
+    newTag: v1.0.0
+  - name: history-svc
+    newName: ghcr.io/your-org/history-svc
+    newTag: v1.0.0
+  - name: audit-svc
+    newName: ghcr.io/your-org/audit-svc
+    newTag: v1.0.0
+  - name: simulation-svc
+    newName: ghcr.io/your-org/simulation-svc
+    newTag: v1.0.0
+  - name: report-svc
+    newName: ghcr.io/your-org/report-svc
+    newTag: v1.0.0
+  - name: gateway-svc
+    newName: ghcr.io/your-org/gateway-svc
+    newTag: v1.0.0

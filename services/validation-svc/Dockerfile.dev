@@ -1,0 +1,31 @@
+# services/validation-svc/Dockerfile.dev
+
+FROM golang:1.24-alpine
+
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY gen/go/logistics/validation/ ./gen/go/logistics/validation/
+COPY gen/go/logistics/common/ ./gen/go/logistics/common/
+COPY gen/openapi/ ./gen/openapi/
+
+COPY pkg/apperror/ ./pkg/apperror/
+COPY pkg/audit/ ./pkg/audit/
+COPY pkg/config/ ./pkg/config/
+COPY pkg/interceptors/ ./pkg/interceptors/
+COPY pkg/logger/ ./pkg/logger/
+COPY pkg/metrics/ ./pkg/metrics/
+COPY pkg/ratelimit/ ./pkg/ratelimit/
+COPY pkg/server/ ./pkg/server/
+COPY pkg/swagger/ ./pkg/swagger/
+COPY pkg/telemetry/ ./pkg/telemetry/
+
+COPY services/validation-svc/ ./services/validation-svc/
+
+EXPOSE 50052 8052
+
+CMD ["air", "-c", "services/validation-svc/.air.toml"]

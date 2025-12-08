@@ -1,0 +1,202 @@
+# deploy/helm/logistics-platform/values.yaml
+
+# Global settings
+global:
+  imageRegistry: ghcr.io/your-org
+  imagePullSecrets: []
+  storageClass: ""
+
+# Common settings for all services
+common:
+  env: production
+  logLevel: info
+  logFormat: json
+  tracing:
+    enabled: true
+    endpoint: http://jaeger-collector:4318
+    sampleRate: "0.1"
+
+# Image settings
+image:
+  pullPolicy: IfNotPresent
+  tag: latest
+
+# Service replicas
+replicaCount:
+  gateway: 3
+  solver: 2
+  validation: 2
+  analytics: 2
+  auth: 2
+  history: 2
+  audit: 2
+  simulation: 2
+  report: 2
+
+# Resource limits
+resources:
+  gateway:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  solver:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  default:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  gateway:
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilization: 70
+  solver:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.logistics.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: logistics-tls
+      hosts:
+        - api.logistics.example.com
+
+# Service ports
+ports:
+  gateway: 8080
+  solver: 50054
+  validation: 50052
+  analytics: 50053
+  auth: 50055
+  history: 50056
+  audit: 50057
+  simulation: 50058
+  report: 50059
+
+# Metrics ports
+metricsPorts:
+  solver: 8054
+  validation: 8052
+  analytics: 8053
+  auth: 8055
+  history: 8056
+  audit: 8057
+  simulation: 8088
+  report: 8059
+
+# Service-specific settings
+services:
+  gateway:
+    cors:
+      enabled: true
+      allowedOrigins: "*"
+    rateLimit:
+      enabled: true
+      rps: 100
+
+  solver:
+    cache:
+      enabled: true
+      driver: redis
+      ttl: 5m
+
+  auth:
+    jwt:
+      accessExpiry: 15m
+      refreshExpiry: 168h
+
+  report:
+    defaultTTL: 24h
+    cleanupInterval: 1h
+
+# Secrets (should use external-secrets or sealed-secrets in production)
+secrets:
+  database:
+    password: "" # Required
+  redis:
+    password: "" # Required
+  jwt:
+    secret: "" # Required
+
+# PostgreSQL (Bitnami subchart)
+postgresql:
+  enabled: true
+  auth:
+    username: logistics
+    database: logistics
+    existingSecret: logistics-db-secret
+  primary:
+    persistence:
+      size: 10Gi
+  metrics:
+    enabled: true
+
+# Redis (Bitnami subchart)
+redis:
+  enabled: true
+  auth:
+    existingSecret: logistics-redis-secret
+  master:
+    persistence:
+      size: 1Gi
+  metrics:
+    enabled: true
+
+# Monitoring
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+
+# Pod Disruption Budgets
+podDisruptionBudget:
+  enabled: true
+  gateway:
+    minAvailable: 2
+  solver:
+    minAvailable: 1
+  auth:
+    minAvailable: 1
+
+# Network Policies
+networkPolicy:
+  enabled: true
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname

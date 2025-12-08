@@ -1,0 +1,59 @@
+# deploy/k8s/overlays/development/kustomization.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: logistics-dev
+
+resources:
+  - ../../base
+
+nameSuffix: -dev
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+
+  - patch: |-
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: debug
+      - op: replace
+        path: /data/APP_ENV
+        value: development
+    target:
+      kind: ConfigMap
+      name: logistics-config
+
+images:
+  - name: solver-svc
+    newName: localhost:5000/solver-svc
+    newTag: dev
+  - name: validation-svc
+    newName: localhost:5000/validation-svc
+    newTag: dev
+  - name: analytics-svc
+    newName: localhost:5000/analytics-svc
+    newTag: dev
+  - name: auth-svc
+    newName: localhost:5000/auth-svc
+    newTag: dev
+  - name: history-svc
+    newName: localhost:5000/history-svc
+    newTag: dev
+  - name: audit-svc
+    newName: localhost:5000/audit-svc
+    newTag: dev
+  - name: simulation-svc
+    newName: localhost:5000/simulation-svc
+    newTag: dev
+  - name: report-svc
+    newName: localhost:5000/report-svc
+    newTag: dev
+  - name: gateway-svc
+    newName: localhost:5000/gateway-svc
+    newTag: dev

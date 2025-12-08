@@ -82,7 +82,9 @@ func createTimeSimTestGraph() *commonv1.Graph {
 
 func TestNewTimeSimulationEngine(t *testing.T) {
 	t.Run("with_client", func(t *testing.T) {
-		engine := NewTimeSimulationEngine(&client.SolverClient{})
+		mockSolver := NewTimeSimMockSolver()
+
+		engine := NewTimeSimulationEngine(mockSolver)
 		assert.NotNil(t, engine)
 		assert.NotNil(t, engine.rng)
 	})
@@ -105,7 +107,6 @@ func TestTimeSimulationEngine_RunTimeSimulation_Success(t *testing.T) {
 		solverClient: mockSolver,
 		rng:          nil,
 	}
-	engine.rng = engine.rng // Will be initialized in NewTimeSimulationEngine
 
 	req := &simulationv1.RunTimeSimulationRequest{
 		Graph: createTimeSimTestGraph(),
@@ -150,8 +151,7 @@ func TestTimeSimulationEngine_RunTimeSimulation_WithEdgePatterns(t *testing.T) {
 	ctx := context.Background()
 	mockSolver := NewTimeSimMockSolver()
 
-	engine := NewTimeSimulationEngine(&client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewTimeSimulationEngine(mockSolver)
 
 	req := &simulationv1.RunTimeSimulationRequest{
 		Graph: createTimeSimTestGraph(),
@@ -187,8 +187,7 @@ func TestTimeSimulationEngine_RunTimeSimulation_WithNodePatterns(t *testing.T) {
 	ctx := context.Background()
 	mockSolver := NewTimeSimMockSolver()
 
-	engine := NewTimeSimulationEngine(&client.SolverClient{})
-	engine.solverClient = mockSolver
+	engine := NewTimeSimulationEngine(mockSolver)
 
 	req := &simulationv1.RunTimeSimulationRequest{
 		Graph: createTimeSimTestGraph(),
@@ -395,7 +394,9 @@ func TestTimeSimulationEngine_GetStartTime(t *testing.T) {
 // ============================================================
 
 func TestTimeSimulationEngine_GetMultiplier(t *testing.T) {
-	engine := NewTimeSimulationEngine(&client.SolverClient{})
+	mockSolver := NewMockSolverClient()
+
+	engine := NewTimeSimulationEngine(mockSolver)
 
 	t.Run("nil_pattern", func(t *testing.T) {
 		result := engine.getMultiplier(nil, 0, time.Now())
@@ -490,7 +491,9 @@ func TestTimeSimulationEngine_GetMultiplier(t *testing.T) {
 // ============================================================
 
 func TestTimeSimulationEngine_ApplyTimePatterns(t *testing.T) {
-	engine := NewTimeSimulationEngine(&client.SolverClient{})
+	mockSolver := NewMockSolverClient()
+
+	engine := NewTimeSimulationEngine(mockSolver)
 
 	t.Run("with_edge_patterns", func(t *testing.T) {
 		graph := createTimeSimTestGraph()

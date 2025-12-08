@@ -1,0 +1,34 @@
+# deploy/k8s/base/rbac.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: logistics-service
+  namespace: logistics
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logistics-role
+  namespace: logistics
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: logistics-role-binding
+  namespace: logistics
+subjects:
+  - kind: ServiceAccount
+    name: logistics-service
+    namespace: logistics
+roleRef:
+  kind: Role
+  name: logistics-role
+  apiGroup: rbac.authorization.k8s.io

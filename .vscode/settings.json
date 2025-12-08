@@ -3,5 +3,14 @@
   "go.testTags": "integration",
   "gopls": {
     "build.buildFlags": ["-tags=integration"]
+  },
+  "yaml.schemas": {},
+  "yaml.validate": false,
+  "files.associations": {
+    "**/templates/*.yaml": "helm",
+    "**/templates/*.tpl": "helm"
+  },
+  "[helm]": {
+    "editor.formatOnSave": false
   }
 }

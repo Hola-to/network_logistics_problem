@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.LoadWithServiceDefaults("validation-svc", 50054)
+	cfg, err := config.LoadWithServiceDefaults("validation-svc", 50052)
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}

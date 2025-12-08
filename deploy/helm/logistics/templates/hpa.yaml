@@ -1,0 +1,46 @@
+# deploy/helm/logistics-platform/templates/hpa.yaml
+
+{{- if .Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "logistics.fullname" . }}-gateway
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "logistics.fullname" . }}-gateway
+  minReplicas: {{ .Values.autoscaling.gateway.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.gateway.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.gateway.targetCPUUtilization }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "logistics.fullname" . }}-solver
+  labels:
+    {{- include "logistics.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "logistics.fullname" . }}-solver
+  minReplicas: {{ .Values.autoscaling.solver.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.solver.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.solver.targetCPUUtilization }}
+{{- end }}

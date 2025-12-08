@@ -1,0 +1,60 @@
+# services/analytics-svc/.dockerignore
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+.zed
+*.swp
+*.swo
+
+# Тесты и покрытие
+*_test.go
+coverage.out
+*.test
+tests/
+
+# Документация
+*.md
+docs/
+LICENSE
+
+# Локальные файлы
+.env
+.env.*
+*.local
+
+# Сборочные артефакты
+bin/
+tmp/
+dist/
+
+# Docker
+**/Dockerfile*
+**/docker-compose*.yml
+**/.dockerignore
+
+# Другие сервисы
+services/auth-svc/
+services/solver-svc/
+services/gateway-svc/
+services/audit-svc/
+services/history-svc/
+services/report-svc/
+services/simulation-svc/
+services/validation-svc/
+
+# Proto исходники
+api/
+
+# Прочее
+Makefile
+buf.yaml
+buf.gen.yaml
+buf.lock
+.golangci.yml
+go.work
+go.work.sum

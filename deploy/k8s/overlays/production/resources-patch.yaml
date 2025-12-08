@@ -1,0 +1,35 @@
+# deploy/k8s/overlays/production/resources-patch.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-svc
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway-svc
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: solver-svc
+spec:
+  template:
+    spec:
+      containers:
+        - name: solver-svc
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
