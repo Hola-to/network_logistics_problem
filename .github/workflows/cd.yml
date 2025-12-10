@@ -4,25 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy'
+        description: "Environment to deploy"
         required: true
         type: choice
         options:
           - staging
           - production
       version:
-        description: 'Version to deploy (default: latest)'
+        description: "Version to deploy (default: latest)"
         required: false
-        default: 'latest'
+        default: "latest"
   push:
     branches:
       - main
     paths-ignore:
-      - '**.md'
-      - 'docs/**'
+      - "**.md"
+      - "docs/**"
 
 env:
-  HELM_VERSION: '3.14.0'
+  HELM_VERSION: "3.14.0"
   REGISTRY: ghcr.io
 
 jobs:
@@ -38,6 +38,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     strategy:
+      fail-fast: false
       matrix:
         service:
           - analytics-svc
@@ -49,6 +50,7 @@ jobs:
           - simulation-svc
           - solver-svc
           - validation-svc
+          - web # <--- Добавлен сервис web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,9 +63,20 @@ jobs:
           else
             echo "VERSION=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
-          # Преобразуем owner в lowercase для Docker registry
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "OWNER_LC=$OWNER_LC" >> $GITHUB_OUTPUT
+
+      # --- НОВЫЙ ШАГ: Определение путей для сборки ---
+      - name: Prepare build context
+        id: context
+        run: |
+          if [ "${{ matrix.service }}" == "web" ]; then
+            echo "DIR=./web" >> $GITHUB_OUTPUT
+            echo "FILE=./web/Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "DIR=." >> $GITHUB_OUTPUT
+            echo "FILE=services/${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -78,8 +91,9 @@ jobs:
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: services/${{ matrix.service }}/Dockerfile
+          # Используем пути, определенные в шаге 'Prepare build context'
+          context: ${{ steps.context.outputs.DIR }}
+          file: ${{ steps.context.outputs.FILE }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ steps.version.outputs.OWNER_LC }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
@@ -135,7 +149,7 @@ jobs:
         if: env.HAS_KUBE_CONFIG == 'true'
         run: |
           helm dependency update deploy/helm/logistics-platform
-          
+
           helm upgrade --install flowly deploy/helm/logistics-platform \
             --namespace flowly-staging \
             --create-namespace \
@@ -164,37 +178,27 @@ jobs:
             docker-compose up -d --remove-orphans
             docker system prune -f
 
-      # Инструкции если нет инфраструктуры
       - name: Deployment Info
         if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY != 'true'
         run: |
           echo "=========================================="
           echo "Docker images built and pushed"
           echo "=========================================="
-          echo ""
           echo "Version: ${{ steps.vars.outputs.VERSION }}"
-          echo ""
-          echo "Images available at:"
-          echo "  ${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}/<service>:${{ steps.vars.outputs.VERSION }}"
-          echo ""
-          echo "To deploy manually run:"
-          echo "  docker-compose pull"
-          echo "  docker-compose up -d"
+          echo "Run manually: docker-compose pull && docker-compose up -d"
 
       - name: Create deployment summary
         run: |
           echo "## Staging Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.vars.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Registry:** \`${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify Slack
         if: always() && env.HAS_SLACK == 'true'
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
-          channel: '#deployments'
+          channel: "#deployments"
           fields: repo,message,commit,author,workflow
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
@@ -245,7 +249,7 @@ jobs:
         if: env.HAS_KUBE_CONFIG == 'true'
         run: |
           helm dependency update deploy/helm/logistics-platform
-          
+
           helm upgrade --install flowly deploy/helm/logistics-platform \
             --namespace flowly \
             --create-namespace \
@@ -274,34 +278,17 @@ jobs:
             docker-compose -f docker-compose.yml up -d --remove-orphans
             docker system prune -f
 
-      # Инструкции
-      - name: Deployment Info
-        if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY != 'true'
-        run: |
-          echo "=========================================="
-          echo "Production Deployment Ready"
-          echo "=========================================="
-          echo ""
-          echo "Version: ${{ steps.vars.outputs.VERSION }}"
-          echo ""
-          echo "Deploy manually:"
-          echo "  docker-compose pull"
-          echo "  docker-compose up -d"
-
       - name: Create deployment summary
         run: |
           echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ steps.vars.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Registry:** \`${{ env.REGISTRY }}/${{ steps.vars.outputs.OWNER_LC }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify Slack
         if: always() && env.HAS_SLACK == 'true'
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
-          channel: '#deployments'
-          text: 'Production deployment ${{ job.status }}'
+          channel: "#deployments"
+          text: "Production deployment ${{ job.status }}"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

@@ -6,20 +6,30 @@ managed:
       value: logistics/gen/go
 
 plugins:
+  # ============ Go ============
   - remote: buf.build/protocolbuffers/go
     out: gen/go
     opt: paths=source_relative
+
   - remote: buf.build/grpc/go
     out: gen/go
     opt: paths=source_relative
+
   - remote: buf.build/connectrpc/go
     out: gen/go
+    opt: paths=source_relative
+
+  # ============ TypeScript ============
+  - remote: buf.build/bufbuild/es
+    out: web/gen/ts
     opt:
-      - paths=source_relative
+      - target=ts
+      - import_extension=none
+
+  # ============ OpenAPI ============
   - remote: buf.build/grpc-ecosystem/openapiv2
     out: gen/openapi
     opt:
+      - logtostderr=true
       - allow_merge=true
       - merge_file_name=api
-      - json_names_for_fields=true
-      - openapi_naming_strategy=fqn

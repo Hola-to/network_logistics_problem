@@ -7,7 +7,7 @@ RUN apk add --no-cache ca-certificates git tzdata
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download && go mod verify
+RUN go mod download -x && go mod verify
 
 # Generated proto files
 COPY gen/go/logistics/audit/ ./gen/go/logistics/audit/

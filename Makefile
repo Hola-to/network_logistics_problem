@@ -13,7 +13,7 @@ BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 
-DOCKER_REGISTRY ?= ghcr.io/your-org
+DOCKER_REGISTRY ?= ghcr.io/hola-to
 DOCKER_PLATFORM ?= linux/amd64
 K8S_NAMESPACE ?= logistics
 
@@ -242,6 +242,35 @@ docker-clean:
 	docker image prune -f
 
 # ============================================================
+# Podman
+# ============================================================
+
+.PHONY: podman-build
+podman-build: $(addprefix podman-build-,$(SERVICES))
+	@echo "✅ Все Podman образы собраны"
+
+.PHONY: podman-build-%
+podman-build-%:
+	@echo "🐳 Сборка Podman образа для $*..."
+	podman build --platform $(DOCKER_PLATFORM) --build-arg VERSION=$(VERSION) -t $(DOCKER_REGISTRY)/$*:$(VERSION) -t $(DOCKER_REGISTRY)/$*:latest -f services/$*/Dockerfile .
+
+.PHONY: podman-push
+podman-push: $(addprefix podman-push-,$(SERVICES))
+
+.PHONY: podman-push-%
+podman-push-%: docker-build-%
+	podman push $(DOCKER_REGISTRY)/$*:$(VERSION)
+	podman push $(DOCKER_REGISTRY)/$*:latest
+
+.PHONY: podman-clean
+podman-clean:
+	@for svc in $(SERVICES); do \
+		podman rmi $(DOCKER_REGISTRY)/$$svc:$(VERSION) 2>/dev/null || true; \
+		podman rmi $(DOCKER_REGISTRY)/$$svc:latest 2>/dev/null || true; \
+	done
+	podman image prune -f
+
+# ============================================================
 # Docker Compose
 # ============================================================
 
@@ -264,6 +293,30 @@ compose-ps:
 .PHONY: compose-restart
 compose-restart:
 	docker-compose restart
+
+# ============================================================
+# Podman Compose
+# ============================================================
+
+.PHONY: podman-compose-up
+podman-compose-up:
+	podman-compose up -d --build
+
+.PHONY: podman-compose-down
+podman-compose-down:
+	podman-compose down -v
+
+.PHONY: podman-compose-logs
+podman-compose-logs:
+	podman-compose logs -f
+
+.PHONY: podman-compose-ps
+podman-compose-ps:
+	podman-compose ps
+
+.PHONY: podman-compose-restart
+podman-compose-restart:
+	podman-compose restart
 
 # ============================================================
 # Kubernetes

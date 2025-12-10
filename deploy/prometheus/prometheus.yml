@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s # Как часто собирать метрики
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "gateway-svc"
+    static_configs:
+      - targets: ["gateway-svc:8080"] # Gateway metrics (обычно на HTTP порту или отдельном)
+
+  - job_name: "validation-svc"
+    static_configs:
+      - targets: ["validation-svc:8052"]
+
+  - job_name: "analytics-svc"
+    static_configs:
+      - targets: ["analytics-svc:8053"]
+
+  - job_name: "solver-svc"
+    static_configs:
+      - targets: ["solver-svc:8054"]
+
+  - job_name: "auth-svc"
+    static_configs:
+      - targets: ["auth-svc:8055"]
+
+  - job_name: "history-svc"
+    static_configs:
+      - targets: ["history-svc:8056"]
+
+  - job_name: "audit-svc"
+    static_configs:
+      - targets: ["audit-svc:8057"]
+
+  - job_name: "simulation-svc"
+    static_configs:
+      - targets: ["simulation-svc:8088"]
+
+  - job_name: "report-svc"
+    static_configs:
+      - targets: ["report-svc:8059"]
+
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis:6379"]
+      # Примечание: для Redis нужен redis-exporter, но пока оставим так,
+      # чтобы прометей просто знал о сервисе, либо удалите этот блок.

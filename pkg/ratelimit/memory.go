@@ -1,3 +1,5 @@
+// pkg/ratelimit/memory.go
+
 package ratelimit
 
 import (
@@ -6,7 +8,6 @@ import (
 	"time"
 )
 
-// MemoryLimiter in-memory реализация rate limiter
 type MemoryLimiter struct {
 	mu      sync.RWMutex
 	buckets map[string]*bucket
@@ -18,13 +19,26 @@ type MemoryLimiter struct {
 type bucket struct {
 	tokens    float64
 	lastCheck time.Time
-	requests  []time.Time // для sliding window
+	requests  []time.Time
 }
 
-// NewMemoryLimiter создаёт in-memory rate limiter
 func NewMemoryLimiter(cfg *Config) *MemoryLimiter {
 	if cfg == nil {
 		cfg = DefaultConfig()
+	}
+
+	// ✅ Нормализуем конфигурацию ДО использования
+	if cfg.CleanupInterval <= 0 {
+		cfg.CleanupInterval = 5 * time.Minute
+	}
+	if cfg.Window <= 0 {
+		cfg.Window = time.Minute
+	}
+	if cfg.Requests <= 0 {
+		cfg.Requests = 100
+	}
+	if cfg.BurstSize <= 0 {
+		cfg.BurstSize = 10
 	}
 
 	l := &MemoryLimiter{
@@ -75,11 +89,9 @@ func (l *MemoryLimiter) allowTokenBucket(b *bucket, n int) bool {
 	elapsed := now.Sub(b.lastCheck)
 	b.lastCheck = now
 
-	// Восполняем токены
 	rate := float64(l.config.Requests) / l.config.Window.Seconds()
 	b.tokens += elapsed.Seconds() * rate
 
-	// Ограничиваем максимум
 	maxTokens := float64(l.config.Requests + l.config.BurstSize)
 	if b.tokens > maxTokens {
 		b.tokens = maxTokens
@@ -97,7 +109,6 @@ func (l *MemoryLimiter) allowSlidingWindow(b *bucket, n int) bool {
 	now := time.Now()
 	windowStart := now.Add(-l.config.Window)
 
-	// Удаляем устаревшие запросы
 	validRequests := make([]time.Time, 0, len(b.requests))
 	for _, t := range b.requests {
 		if t.After(windowStart) {
@@ -106,7 +117,6 @@ func (l *MemoryLimiter) allowSlidingWindow(b *bucket, n int) bool {
 	}
 	b.requests = validRequests
 
-	// Проверяем лимит
 	if len(b.requests)+n <= l.config.Requests {
 		for i := 0; i < n; i++ {
 			b.requests = append(b.requests, now)
@@ -131,7 +141,6 @@ func (l *MemoryLimiter) Wait(ctx context.Context, key string) error {
 				return nil
 			}
 
-			// Ждём немного перед следующей попыткой
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -203,8 +212,15 @@ func (l *MemoryLimiter) Close() error {
 	return nil
 }
 
+// ✅ ИСПРАВЛЕННАЯ функция cleanup
 func (l *MemoryLimiter) cleanup() {
-	ticker := time.NewTicker(l.config.CleanupInterval)
+	// Защита от нулевого интервала
+	interval := l.config.CleanupInterval
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -222,16 +238,14 @@ func (l *MemoryLimiter) doCleanup() {
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	windowStart := now.Add(-l.config.Window * 2) // Храним 2x window
+	windowStart := now.Add(-l.config.Window * 2)
 
 	for key, b := range l.buckets {
-		// Удаляем пустые buckets
 		if len(b.requests) == 0 && b.lastCheck.Before(windowStart) {
 			delete(l.buckets, key)
 			continue
 		}
 
-		// Чистим старые запросы
 		validRequests := make([]time.Time, 0)
 		for _, t := range b.requests {
 			if t.After(windowStart) {

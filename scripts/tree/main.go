@@ -52,7 +52,8 @@ func NewTreePrinter(root string) *TreePrinter {
 	return &TreePrinter{
 		root: root,
 		excludeDirs: map[string]bool{
-			".git": true, // Exclude .git contents but show the directory
+			".git":         true, // Exclude .git contents but show the directory
+			"node_modules": true,
 		},
 		showHidden: true,
 		maxDepth:   -1, // No limit
@@ -196,7 +197,7 @@ func main() {
 	outputFile := flag.String("output", "", "Output file (default: stdout)")
 	noHeader := flag.Bool("no-header", false, "Don't print header")
 	noStats := flag.Bool("no-stats", false, "Don't print statistics")
-	exclude := flag.String("exclude", ".git", "Comma-separated directories to exclude contents")
+	exclude := flag.String("exclude", "", "Comma-separated directories to exclude contents (added to defaults)")
 	flag.Parse()
 
 	// Handle positional argument
@@ -212,9 +213,10 @@ func main() {
 
 	// Parse exclude list
 	if *exclude != "" {
-		printer.excludeDirs = make(map[string]bool)
 		for _, dir := range strings.Split(*exclude, ",") {
-			printer.excludeDirs[strings.TrimSpace(dir)] = true
+			if trimmed := strings.TrimSpace(dir); trimmed != "" {
+				printer.excludeDirs[trimmed] = true
+			}
 		}
 	}
 

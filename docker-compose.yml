@@ -1,29 +1,28 @@
-# docker-compose.yml
-
 version: "3.8"
 
 x-common-env: &common-env
-  APP_ENV: development
-  LOG_LEVEL: debug
-  LOG_FORMAT: text
-  TRACING_ENABLED: "true"
-  TRACING_ENDPOINT: http://jaeger:4318
+  LOGISTICS_APP_ENVIRONMENT: development
+  LOGISTICS_LOG_LEVEL: debug
+  LOGISTICS_LOG_FORMAT: text
+  LOGISTICS_TRACING_ENABLED: "true"
+  LOGISTICS_TRACING_ENDPOINT: http://jaeger:4318
 
 x-database-env: &database-env
-  DATABASE_DRIVER: postgres
-  DATABASE_HOST: postgres
-  DATABASE_PORT: 5432
-  DATABASE_USER: logistics
-  DATABASE_PASSWORD: logistics
-  DATABASE_NAME: logistics
-  DATABASE_AUTO_MIGRATE: "true"
+  LOGISTICS_DATABASE_DRIVER: postgres
+  LOGISTICS_DATABASE_HOST: postgres
+  LOGISTICS_DATABASE_PORT: "5432"
+  LOGISTICS_DATABASE_USERNAME: logistics
+  LOGISTICS_DATABASE_PASSWORD: logistics
+  LOGISTICS_DATABASE_DATABASE: logistics
+  LOGISTICS_DATABASE_SSL_MODE: disable
+  LOGISTICS_DATABASE_AUTO_MIGRATE: "true"
 
 services:
   # ============================================================
-  # Infrastructure
+  # Infrastructure (Переменные здесь стандартные, префикс не нужен)
   # ============================================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: logistics-postgres
     environment:
       POSTGRES_USER: logistics
@@ -34,7 +33,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U logistics"]
+      test: ["CMD-SHELL", "pg_isready -U logistics -d logistics"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -42,7 +41,7 @@ services:
       - logistics-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.4-alpine
     container_name: logistics-redis
     ports:
       - "6379:6379"
@@ -57,19 +56,19 @@ services:
       - logistics-net
 
   jaeger:
-    image: jaegertracing/all-in-one:1.53
+    image: jaegertracing/all-in-one:latest
     container_name: logistics-jaeger
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686" # UI
-      - "4317:4317" # gRPC OTLP
-      - "4318:4318" # HTTP OTLP
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
     networks:
       - logistics-net
 
   prometheus:
-    image: prom/prometheus:v2.48.0
+    image: prom/prometheus:main
     container_name: logistics-prometheus
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -83,7 +82,7 @@ services:
       - logistics-net
 
   grafana:
-    image: grafana/grafana:10.2.2
+    image: grafana/grafana:main
     container_name: logistics-grafana
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -108,13 +107,15 @@ services:
     container_name: logistics-solver
     environment:
       <<: *common-env
-      APP_NAME: solver-svc
-      GRPC_PORT: 50054
-      METRICS_PORT: 8054
-      CACHE_ENABLED: "true"
-      CACHE_DRIVER: redis
-      CACHE_REDIS_ADDR: redis:6379
-      CACHE_DEFAULT_TTL: 5m
+      LOGISTICS_APP_NAME: solver-svc
+      LOGISTICS_GRPC_PORT: 50054
+      LOGISTICS_METRICS_PORT: 8054
+      LOGISTICS_CACHE_ENABLED: "true"
+      LOGISTICS_CACHE_DRIVER: redis
+      # Исправлено: CacheConfig требует host и port отдельно, а не addr
+      LOGISTICS_CACHE_HOST: redis
+      LOGISTICS_CACHE_PORT: 6379
+      LOGISTICS_CACHE_DEFAULT_TTL: 5m
     ports:
       - "50054:50054"
       - "8054:8054"
@@ -132,9 +133,9 @@ services:
     container_name: logistics-validation
     environment:
       <<: *common-env
-      APP_NAME: validation-svc
-      GRPC_PORT: 50052
-      METRICS_PORT: 8052
+      LOGISTICS_APP_NAME: validation-svc
+      LOGISTICS_GRPC_PORT: 50052
+      LOGISTICS_METRICS_PORT: 8052
     ports:
       - "50052:50052"
       - "8052:8052"
@@ -149,9 +150,9 @@ services:
     container_name: logistics-analytics
     environment:
       <<: *common-env
-      APP_NAME: analytics-svc
-      GRPC_PORT: 50053
-      METRICS_PORT: 8053
+      LOGISTICS_APP_NAME: analytics-svc
+      LOGISTICS_GRPC_PORT: 50053
+      LOGISTICS_METRICS_PORT: 8053
     ports:
       - "50053:50053"
       - "8053:8053"
@@ -165,14 +166,15 @@ services:
       dockerfile: services/auth-svc/Dockerfile
     container_name: logistics-auth
     environment:
-      # ВНИМАНИЕ: Слияние двух якорей через список
       <<: [*common-env, *database-env]
-      APP_NAME: auth-svc
-      GRPC_PORT: 50055
-      METRICS_PORT: 8055
-      JWT_SECRET: super-secret-key-change-in-production
-      JWT_ACCESS_EXPIRY: 15m
-      JWT_REFRESH_EXPIRY: 168h
+      LOGISTICS_APP_NAME: auth-svc
+      LOGISTICS_GRPC_PORT: 50055
+      LOGISTICS_METRICS_PORT: 8055
+      # JWT обычно не в struct Config, но если используется напрямую через os.Getenv, оставьте как есть.
+      # Если через Config, добавьте префикс. Для надежности добавляем префикс.
+      LOGISTICS_JWT_SECRET: super-secret-key-change-in-production
+      LOGISTICS_JWT_ACCESS_EXPIRY: 15m
+      LOGISTICS_JWT_REFRESH_EXPIRY: 168h
     ports:
       - "50055:50055"
       - "8055:8055"
@@ -190,9 +192,9 @@ services:
     container_name: logistics-history
     environment:
       <<: [*common-env, *database-env]
-      APP_NAME: history-svc
-      GRPC_PORT: 50056
-      METRICS_PORT: 8056
+      LOGISTICS_APP_NAME: history-svc
+      LOGISTICS_GRPC_PORT: 50056
+      LOGISTICS_METRICS_PORT: 8056
     ports:
       - "50056:50056"
       - "8056:8056"
@@ -210,9 +212,9 @@ services:
     container_name: logistics-audit
     environment:
       <<: [*common-env, *database-env]
-      APP_NAME: audit-svc
-      GRPC_PORT: 50057
-      METRICS_PORT: 8057
+      LOGISTICS_APP_NAME: audit-svc
+      LOGISTICS_GRPC_PORT: 50057
+      LOGISTICS_METRICS_PORT: 8057
     ports:
       - "50057:50057"
       - "8057:8057"
@@ -230,11 +232,12 @@ services:
     container_name: logistics-simulation
     environment:
       <<: [*common-env, *database-env]
-      APP_NAME: simulation-svc
-      GRPC_PORT: 50058
-      METRICS_PORT: 8088
-      SERVICES_SOLVER_HOST: solver-svc
-      SERVICES_SOLVER_PORT: 50054
+      LOGISTICS_APP_NAME: simulation-svc
+      LOGISTICS_GRPC_PORT: 50058
+      LOGISTICS_METRICS_PORT: 8088
+      # Discovery settings
+      LOGISTICS_SERVICES_SOLVER_HOST: solver-svc
+      LOGISTICS_SERVICES_SOLVER_PORT: 50054
     ports:
       - "50058:50058"
       - "8088:8088"
@@ -254,11 +257,11 @@ services:
     container_name: logistics-report
     environment:
       <<: [*common-env, *database-env]
-      APP_NAME: report-svc
-      GRPC_PORT: 50059
-      METRICS_PORT: 8059
-      REPORT_DEFAULT_TTL: 24h
-      REPORT_CLEANUP_INTERVAL: 1h
+      LOGISTICS_APP_NAME: report-svc
+      LOGISTICS_GRPC_PORT: 50059
+      LOGISTICS_METRICS_PORT: 8059
+      LOGISTICS_REPORT_DEFAULT_TTL: 24h
+      LOGISTICS_REPORT_CLEANUP_INTERVAL: 1h
     ports:
       - "50059:50059"
       - "8059:8059"
@@ -276,26 +279,36 @@ services:
     container_name: logistics-gateway
     environment:
       <<: *common-env
-      APP_NAME: gateway-svc
-      HTTP_PORT: 8080
-      CORS_ENABLED: "true"
-      CORS_ALLOWED_ORIGINS: "*"
-      SERVICES_SOLVER_HOST: solver-svc
-      SERVICES_SOLVER_PORT: 50054
-      SERVICES_ANALYTICS_HOST: analytics-svc
-      SERVICES_ANALYTICS_PORT: 50053
-      SERVICES_VALIDATION_HOST: validation-svc
-      SERVICES_VALIDATION_PORT: 50052
-      SERVICES_HISTORY_HOST: history-svc
-      SERVICES_HISTORY_PORT: 50056
-      SERVICES_AUTH_HOST: auth-svc
-      SERVICES_AUTH_PORT: 50055
-      SERVICES_SIMULATION_HOST: simulation-svc
-      SERVICES_SIMULATION_PORT: 50058
-      SERVICES_REPORT_HOST: report-svc
-      SERVICES_REPORT_PORT: 50059
-      SERVICES_AUDIT_HOST: audit-svc
-      SERVICES_AUDIT_PORT: 50057
+      LOGISTICS_APP_NAME: gateway-svc
+      LOGISTICS_HTTP_PORT: 8080
+      LOGISTICS_HTTP_CORS_ENABLED: "true"
+      # CORS allowed origins - список строк
+      # LOGISTICS_HTTP_CORS_ALLOWED_ORIGINS: "*"
+
+      # Service Discovery
+      LOGISTICS_SERVICES_SOLVER_HOST: solver-svc
+      LOGISTICS_SERVICES_SOLVER_PORT: 50054
+
+      LOGISTICS_SERVICES_ANALYTICS_HOST: analytics-svc
+      LOGISTICS_SERVICES_ANALYTICS_PORT: 50053
+
+      LOGISTICS_SERVICES_VALIDATION_HOST: validation-svc
+      LOGISTICS_SERVICES_VALIDATION_PORT: 50052
+
+      LOGISTICS_SERVICES_HISTORY_HOST: history-svc
+      LOGISTICS_SERVICES_HISTORY_PORT: 50056
+
+      LOGISTICS_SERVICES_AUTH_HOST: auth-svc
+      LOGISTICS_SERVICES_AUTH_PORT: 50055
+
+      LOGISTICS_SERVICES_SIMULATION_HOST: simulation-svc
+      LOGISTICS_SERVICES_SIMULATION_PORT: 50058
+
+      LOGISTICS_SERVICES_REPORT_HOST: report-svc
+      LOGISTICS_SERVICES_REPORT_PORT: 50059
+
+      LOGISTICS_SERVICES_AUDIT_HOST: audit-svc
+      LOGISTICS_SERVICES_AUDIT_PORT: 50057
     ports:
       - "8080:8080"
     depends_on:
@@ -307,6 +320,19 @@ services:
       - audit-svc
       - simulation-svc
       - report-svc
+    networks:
+      - logistics-net
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: logistics-web
+    ports:
+      - "8081:8081"
+    depends_on:
+      - gateway-svc
     networks:
       - logistics-net
     restart: unless-stopped
