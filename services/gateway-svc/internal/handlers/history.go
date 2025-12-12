@@ -9,6 +9,7 @@ import (
 	commonv1 "logistics/gen/go/logistics/common/v1"
 	gatewayv1 "logistics/gen/go/logistics/gateway/v1"
 	historyv1 "logistics/gen/go/logistics/history/v1"
+	optimizationv1 "logistics/gen/go/logistics/optimization/v1"
 	"logistics/services/gateway-svc/internal/clients"
 	"logistics/services/gateway-svc/internal/middleware"
 )
@@ -38,11 +39,56 @@ func (h *HistoryHandler) SaveCalculation(
 	}
 	msg := req.Msg
 
+	// ========================================================================
+	// 1. Конвертация Request (Gateway -> Optimization)
+	// ========================================================================
+
+	var optOptions *optimizationv1.SolveOptions
+
+	solveReq := &optimizationv1.SolveRequest{
+		Graph:   msg.Graph,
+		Options: optOptions,
+	}
+
+	// ========================================================================
+	// 2. Конвертация Response (Gateway -> Optimization)
+	// ========================================================================
+	var solveResp *optimizationv1.SolveResponse
+
+	if msg.Result != nil {
+		// 2.1 Конвертация Метрик (Gateway Metrics -> Optimization Metrics)
+		var optMetrics *optimizationv1.SolveMetrics
+		if msg.Result.Metrics != nil {
+			optMetrics = &optimizationv1.SolveMetrics{
+				ComputationTimeMs:    msg.Result.Metrics.ComputationTimeMs,
+				Iterations:           msg.Result.Metrics.Iterations,
+				AugmentingPathsFound: msg.Result.Metrics.AugmentingPathsFound,
+				MemoryUsedBytes:      msg.Result.Metrics.MemoryUsedBytes,
+			}
+		}
+
+		// 2.2 Сборка основного ответа
+		solveResp = &optimizationv1.SolveResponse{
+			Success:      msg.Result.Success,
+			Result:       msg.Result.Result,
+			SolvedGraph:  msg.Result.SolvedGraph,
+			ErrorMessage: msg.Result.ErrorMessage,
+			Metrics:      optMetrics,
+		}
+	}
+
+	// ========================================================================
+	// 3. Отправка в сервис истории
+	// ========================================================================
+
 	resp, err := h.clients.History().Raw().SaveCalculation(ctx, &historyv1.SaveCalculationRequest{
-		UserId: userID,
-		Name:   msg.Name,
-		Tags:   msg.Tags,
+		UserId:   userID,
+		Name:     msg.Name,
+		Tags:     msg.Tags,
+		Request:  solveReq,
+		Response: solveResp,
 	})
+
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

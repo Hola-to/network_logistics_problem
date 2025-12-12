@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { solverService, historyService } from "@/api/services";
 import { useGraphStore } from "@/stores/graphStore";
 import type { ErrorDetail } from "@gen/logistics/common/v1/common_pb";
+import type { SolveGraphResponse } from "@gen/logistics/gateway/v1/gateway_pb";
 
 export function useSolver() {
   const store = useGraphStore();
@@ -31,7 +32,7 @@ export function useSolver() {
       store.setLoading(true);
       store.setError(null);
     },
-    onSuccess: (response) => {
+    onSuccess: (response: SolveGraphResponse) => {
       if (response.success && response.result && response.solvedGraph) {
         store.setSolution(
           response.solvedGraph,
@@ -97,20 +98,28 @@ export function useSolver() {
 
   const saveMutation = useMutation({
     mutationFn: async (name?: string) => {
-      const graph = store.getGraph();
+      const {
+        flowResult,
+        solvedGraph,
+        metrics,
+        getGraph,
+        name: storeName,
+      } = store;
+
+      if (!flowResult) {
+        throw new Error(
+          "Нет результата для сохранения. Сначала выполните оптимизацию.",
+        );
+      }
+
+      const graph = getGraph();
+
       return historyService.saveCalculation({
-        name: name ?? store.name,
+        name: name ?? storeName,
         graph,
-        result: store.flowResult
-          ? {
-              $typeName: "logistics.gateway.v1.SolveGraphResponse",
-              success: true,
-              result: store.flowResult,
-              solvedGraph: store.solvedGraph ?? undefined,
-              metrics: store.metrics ?? undefined,
-              errorMessage: "",
-            }
-          : undefined,
+        flowResult,
+        solvedGraph: solvedGraph ?? undefined,
+        metrics,
       });
     },
     onSuccess: (response) => {

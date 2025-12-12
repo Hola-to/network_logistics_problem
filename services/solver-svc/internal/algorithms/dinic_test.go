@@ -1,7 +1,9 @@
 package algorithms
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -389,4 +391,261 @@ func TestDinic_DFSDeadEndReturnsZero(t *testing.T) {
 	result := Dinic(g, 1, 4, DefaultSolverOptions())
 
 	assert.Equal(t, 0.0, result.MaxFlow)
+}
+
+// =============================================================================
+// dinicDFSRecursive Coverage
+// =============================================================================
+
+func TestDinicDFSRecursive_Basic(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+	g.AddEdgeWithReverse(2, 3, 10, 0)
+
+	level := map[int64]int{1: 0, 2: 1, 3: 2}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 3, graph.Infinity, level, iter, 1e-9)
+
+	assert.InDelta(t, 10.0, flow, 1e-9)
+	assert.Equal(t, []int64{1, 2, 3}, path)
+}
+
+func TestDinicDFSRecursive_NoPath(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddNode(1)
+	g.AddNode(2)
+	g.AddNode(3)
+
+	level := map[int64]int{1: 0, 2: 1, 3: 2}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 3, graph.Infinity, level, iter, 1e-9)
+
+	assert.Equal(t, 0.0, flow)
+	assert.Nil(t, path)
+}
+
+func TestDinicDFSRecursive_NilNeighbors(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddNode(1)
+	g.AddNode(2)
+
+	level := map[int64]int{1: 0, 2: 1}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 2, 10, level, iter, 1e-9)
+
+	assert.Equal(t, 0.0, flow)
+	assert.Nil(t, path)
+}
+
+func TestDinicDFSRecursive_DeadEnd(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+	g.AddNode(3)
+
+	level := map[int64]int{1: 0, 2: 1, 3: 2}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 3, 10, level, iter, 1e-9)
+
+	assert.Equal(t, 0.0, flow)
+	assert.Nil(t, path)
+	_, exists := level[2]
+	assert.False(t, exists, "Dead end node should be removed from level")
+}
+
+func TestDinicDFSRecursive_WrongLevel(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+	g.AddEdgeWithReverse(2, 3, 10, 0)
+
+	level := map[int64]int{1: 0, 2: 0, 3: 1}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 3, 10, level, iter, 1e-9)
+
+	assert.Equal(t, 0.0, flow)
+	assert.Nil(t, path)
+}
+
+func TestDinicDFSRecursive_CapacityBelowEpsilon(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 1e-12, 0)
+	g.AddEdgeWithReverse(2, 3, 10, 0)
+
+	level := map[int64]int{1: 0, 2: 1, 3: 2}
+	iter := make(map[int64]int)
+
+	flow, path := dinicDFSRecursive(g, 1, 3, 10, level, iter, 1e-9)
+
+	assert.Equal(t, 0.0, flow)
+	assert.Nil(t, path)
+}
+
+func TestDinicDFSRecursive_MultiplePaths(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 0)
+	g.AddEdgeWithReverse(1, 3, 5, 0)
+	g.AddEdgeWithReverse(2, 4, 5, 0)
+	g.AddEdgeWithReverse(3, 4, 5, 0)
+
+	level := map[int64]int{1: 0, 2: 1, 3: 1, 4: 2}
+	iter := make(map[int64]int)
+
+	flow1, path1 := dinicDFSRecursive(g, 1, 4, graph.Infinity, level, iter, 1e-9)
+	assert.InDelta(t, 5.0, flow1, 1e-9)
+	assert.NotNil(t, path1)
+
+	flow2, path2 := dinicDFSRecursive(g, 1, 4, graph.Infinity, level, iter, 1e-9)
+	assert.InDelta(t, 5.0, flow2, 1e-9)
+	assert.NotNil(t, path2)
+}
+
+// =============================================================================
+// DinicWithCallback Coverage
+// =============================================================================
+
+func TestDinicWithCallback_Basic(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+	g.AddEdgeWithReverse(1, 3, 10, 0)
+	g.AddEdgeWithReverse(2, 4, 10, 0)
+	g.AddEdgeWithReverse(3, 4, 10, 0)
+
+	var callbackPaths [][]int64
+	var callbackFlows []float64
+
+	callback := func(path []int64, flow float64) {
+		pathCopy := make([]int64, len(path))
+		copy(pathCopy, path)
+		callbackPaths = append(callbackPaths, pathCopy)
+		callbackFlows = append(callbackFlows, flow)
+	}
+
+	opts := DefaultSolverOptions()
+	opts.ReturnPaths = true
+
+	result := DinicWithCallback(context.Background(), g, 1, 4, opts, callback)
+
+	assert.InDelta(t, 20.0, result.MaxFlow, 1e-9)
+	assert.NotEmpty(t, callbackPaths, "Callback should be called")
+	assert.Equal(t, len(callbackPaths), len(callbackFlows))
+}
+
+func TestDinicWithCallback_NilCallback(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+
+	result := DinicWithCallback(context.Background(), g, 1, 2, DefaultSolverOptions(), nil)
+
+	assert.InDelta(t, 10.0, result.MaxFlow, 1e-9)
+}
+
+func TestDinicWithCallback_Cancellation(t *testing.T) {
+	g := graph.NewResidualGraph()
+	for i := int64(0); i < 100; i++ {
+		g.AddEdgeWithReverse(i, i+1, 1, 0)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := DinicWithCallback(ctx, g, 0, 100, DefaultSolverOptions(), nil)
+
+	assert.True(t, result.Canceled)
+}
+
+func TestDinicWithCallback_ZeroFlow(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 0, 0)
+
+	var called bool
+	callback := func(path []int64, flow float64) {
+		called = true
+	}
+
+	result := DinicWithCallback(context.Background(), g, 1, 2, DefaultSolverOptions(), callback)
+
+	assert.Equal(t, 0.0, result.MaxFlow)
+	assert.False(t, called, "Callback should not be called for zero flow")
+}
+
+func TestDinicWithCallback_NilOptions(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+
+	result := DinicWithCallback(context.Background(), g, 1, 2, nil, nil)
+
+	assert.InDelta(t, 10.0, result.MaxFlow, 1e-9)
+}
+
+func TestDinicWithCallback_MaxIterations(t *testing.T) {
+	g := graph.NewResidualGraph()
+	for i := int64(1); i <= 10; i++ {
+		g.AddEdgeWithReverse(0, i, 1, 0)
+		g.AddEdgeWithReverse(i, 11, 1, 0)
+	}
+
+	opts := &SolverOptions{
+		Epsilon:       1e-9,
+		MaxIterations: 1,
+	}
+
+	result := DinicWithCallback(context.Background(), g, 0, 11, opts, nil)
+
+	assert.LessOrEqual(t, result.Iterations, 1)
+}
+
+func TestDinicWithCallback_ReturnPaths(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 0)
+	g.AddEdgeWithReverse(2, 3, 5, 0)
+
+	opts := &SolverOptions{
+		Epsilon:     1e-9,
+		ReturnPaths: true,
+	}
+
+	var callbackCount int
+	callback := func(path []int64, flow float64) {
+		callbackCount++
+	}
+
+	result := DinicWithCallback(context.Background(), g, 1, 3, opts, callback)
+
+	assert.NotEmpty(t, result.Paths)
+	assert.Equal(t, callbackCount, len(result.Paths))
+}
+
+// =============================================================================
+// Dinic Context Timeout
+// =============================================================================
+
+func TestDinic_ContextTimeout(t *testing.T) {
+	g := graph.NewResidualGraph()
+	for i := int64(0); i < 1000; i++ {
+		g.AddEdgeWithReverse(i, i+1, 1, 0)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+
+	time.Sleep(1 * time.Millisecond)
+
+	result := DinicWithContext(ctx, g, 0, 1000, DefaultSolverOptions())
+
+	assert.True(t, result.Canceled)
+}
+
+func TestDinic_SinkUnreachableAfterFirstPhase(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 0)
+
+	opts := DefaultSolverOptions()
+	result := Dinic(g, 1, 2, opts)
+
+	assert.InDelta(t, 5.0, result.MaxFlow, 1e-9)
+	assert.Equal(t, 1, result.Iterations)
 }

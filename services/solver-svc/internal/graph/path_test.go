@@ -68,6 +68,15 @@ func TestReconstructPath(t *testing.T) {
 			sink:   6,
 			want:   []int64{1, 2, 3, 4, 5, 6},
 		},
+		{
+			name: "source equals sink",
+			parent: map[int64]int64{
+				1: -1,
+			},
+			source: 1,
+			sink:   1,
+			want:   []int64{1},
+		},
 	}
 
 	for _, tt := range tests {
@@ -332,34 +341,34 @@ func TestAugmentPath_LongPath(t *testing.T) {
 func TestFindMinCapacityOnPath_InfinityCapacity(t *testing.T) {
 	g := NewResidualGraph()
 
-	// Создаём ребро с Infinity capacity
+	// Create edge with Infinity capacity
 	g.AddNode(1)
 	g.AddNode(2)
 	if g.Edges[1] == nil {
 		g.Edges[1] = make(map[int64]*ResidualEdge)
 	}
-	g.Edges[1][2] = &ResidualEdge{
+	edge := &ResidualEdge{
 		To:               2,
-		Capacity:         Infinity, // Infinity capacity
+		Capacity:         Infinity,
 		Cost:             0,
 		Flow:             0,
 		OriginalCapacity: Infinity,
 		IsReverse:        false,
 	}
+	g.Edges[1][2] = edge
+	g.EdgesList[1] = append(g.EdgesList[1], edge)
 
 	path := []int64{1, 2}
 
 	result := FindMinCapacityOnPath(g, path)
 
-	// Когда capacity = Infinity, условие edge.Capacity < minCapacity не срабатывает
-	// и minCapacity остаётся Infinity, что приводит к return 0
+	// When capacity = Infinity, minCapacity stays Infinity and returns 0
 	assert.Equal(t, 0.0, result)
 }
 
 func TestFindMinCapacityOnPath_AllEdgesInfinity(t *testing.T) {
 	g := NewResidualGraph()
 
-	// Несколько рёбер с Infinity capacity
 	g.AddNode(1)
 	g.AddNode(2)
 	g.AddNode(3)
@@ -367,24 +376,41 @@ func TestFindMinCapacityOnPath_AllEdgesInfinity(t *testing.T) {
 	if g.Edges[1] == nil {
 		g.Edges[1] = make(map[int64]*ResidualEdge)
 	}
-	g.Edges[1][2] = &ResidualEdge{
+	edge1 := &ResidualEdge{
 		To:               2,
 		Capacity:         Infinity,
 		OriginalCapacity: Infinity,
 	}
+	g.Edges[1][2] = edge1
+	g.EdgesList[1] = append(g.EdgesList[1], edge1)
 
 	if g.Edges[2] == nil {
 		g.Edges[2] = make(map[int64]*ResidualEdge)
 	}
-	g.Edges[2][3] = &ResidualEdge{
+	edge2 := &ResidualEdge{
 		To:               3,
 		Capacity:         Infinity,
 		OriginalCapacity: Infinity,
 	}
+	g.Edges[2][3] = edge2
+	g.EdgesList[2] = append(g.EdgesList[2], edge2)
 
 	path := []int64{1, 2, 3}
 
 	result := FindMinCapacityOnPath(g, path)
 
 	assert.Equal(t, 0.0, result)
+}
+
+func TestFindMinCapacityOnPath_MixedCapacity(t *testing.T) {
+	g := NewResidualGraph()
+	g.AddEdge(1, 2, 10, 0)
+	g.AddEdge(2, 3, Infinity, 0)
+	g.AddEdge(3, 4, 5, 0)
+
+	path := []int64{1, 2, 3, 4}
+
+	result := FindMinCapacityOnPath(g, path)
+
+	assert.Equal(t, 5.0, result) // Minimum of 10, Infinity, 5
 }

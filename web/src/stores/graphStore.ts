@@ -26,7 +26,6 @@ export { Algorithm, NodeType, RoadType, FlowStatus };
 const toBigInt = (n: number | bigint): bigint =>
   typeof n === "bigint" ? n : BigInt(n);
 
-// Типизированные фабрики для protobuf messages
 const createNode = (
   data: Partial<Node> & { id: bigint; x: number; y: number },
 ): Node => {
@@ -86,9 +85,13 @@ interface GraphState {
   sinkId: bigint | null;
   name: string;
   metadata: Record<string, string>;
+
+  // Результаты решения (храним как plain data, не protobuf)
   solvedGraph: Graph | null;
   flowResult: FlowResult | null;
   metrics: SolveMetrics | null;
+
+  // UI state
   selectedNodeId: bigint | null;
   selectedEdgeKey: { from: bigint; to: bigint } | null;
   algorithm: Algorithm;
@@ -124,11 +127,12 @@ interface GraphState {
 
   // Solution actions
   setSolution: (
-    graph: Graph | null,
-    result: FlowResult | null,
+    solvedGraph: Graph | null,
+    flowResult: FlowResult | null,
     metrics: SolveMetrics | null,
   ) => void;
   clearSolution: () => void;
+  hasSolution: () => boolean;
 
   // UI actions
   selectNode: (id: bigint | number | null) => void;
@@ -181,6 +185,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
       nodes: [...state.nodes, node],
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
 
     return node;
@@ -201,6 +206,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
       }),
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
   },
 
@@ -215,6 +221,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
         state.selectedNodeId === bigId ? null : state.selectedNodeId,
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
   },
 
@@ -240,6 +247,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
       edges: [...state.edges, edge],
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
 
     return edge;
@@ -260,6 +268,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
       }),
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
   },
 
@@ -275,6 +284,7 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
           : state.selectedEdgeKey,
       solvedGraph: null,
       flowResult: null,
+      metrics: null,
     }));
   },
 
@@ -296,7 +306,6 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
     const maxId = graph.nodes.reduce((max, n) => (n.id > max ? n.id : max), 0n);
     nodeIdCounter = maxId + 1n;
 
-    // Пересоздаём все узлы и рёбра через фабрики
     const nodes = graph.nodes.map((n) =>
       createNode({
         id: n.id,
@@ -377,11 +386,26 @@ export const useGraphStore = createStore<GraphState>((set, get) => ({
   // Solution Actions
   // ==========================================================================
 
-  setSolution: (solvedGraph, flowResult, metrics) =>
-    set({ solvedGraph, flowResult, metrics, error: null }),
+  setSolution: (solvedGraph, flowResult, metrics) => {
+    set({
+      solvedGraph,
+      flowResult,
+      metrics,
+      error: null,
+    });
+  },
 
   clearSolution: () =>
-    set({ solvedGraph: null, flowResult: null, metrics: null }),
+    set({
+      solvedGraph: null,
+      flowResult: null,
+      metrics: null,
+    }),
+
+  hasSolution: () => {
+    const state = get();
+    return state.flowResult !== null;
+  },
 
   // ==========================================================================
   // UI Actions

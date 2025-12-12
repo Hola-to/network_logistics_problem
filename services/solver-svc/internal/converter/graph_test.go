@@ -37,17 +37,17 @@ func TestToResidualGraph_SimpleGraph(t *testing.T) {
 
 	assert.Equal(t, 3, rg.NodeCount())
 
-	// Проверяем прямые ребра
+	// Check forward edges
 	edge12 := rg.GetEdge(1, 2)
 	require.NotNil(t, edge12)
 	assert.Equal(t, 10.0, edge12.Capacity)
 	assert.Equal(t, 5.0, edge12.Cost)
 	assert.False(t, edge12.IsReverse)
 
-	// Проверяем обратные ребра (автоматически созданные)
+	// Check reverse edges (automatically created)
 	edge21 := rg.GetEdge(2, 1)
 	require.NotNil(t, edge21)
-	assert.Equal(t, 0.0, edge21.Capacity) // Обратное ребро начинается с 0
+	assert.Equal(t, 0.0, edge21.Capacity)
 	assert.True(t, edge21.IsReverse)
 }
 
@@ -63,23 +63,15 @@ func TestToResidualGraph_BidirectionalEdge(t *testing.T) {
 
 	rg := ToResidualGraph(proto)
 
-	// При Bidirectional=true создаются ДВА прямых ребра
-	// 1->2 и 2->1, каждое с указанной capacity
-
 	edge12 := rg.GetEdge(1, 2)
 	edge21 := rg.GetEdge(2, 1)
 
 	require.NotNil(t, edge12, "Edge 1->2 should exist")
 	require.NotNil(t, edge21, "Edge 2->1 should exist")
 
-	// Оба ребра должны иметь capacity 10
-	// Примечание: реализация AddEdgeWithReverse дважды для bidirectional
-	// может привести к тому, что edge21 будет иметь capacity=10 (прямое ребро)
-	// а не 0 (только обратное)
-
-	// Проверяем, что хотя бы одно из ребер имеет capacity 10
-	assert.True(t, edge12.Capacity == 10.0 || edge21.Capacity == 10.0,
-		"At least one direction should have capacity 10")
+	// Both directions should have capacity 10 (bidirectional creates two forward edges)
+	assert.Equal(t, 10.0, edge12.Capacity)
+	assert.Equal(t, 10.0, edge21.Capacity)
 }
 
 func TestToResidualGraph_LargeGraph(t *testing.T) {
@@ -147,15 +139,79 @@ func TestToFlowEdges_DoesNotIncludeReverseEdges(t *testing.T) {
 
 	edges := ToFlowEdges(rg)
 
-	// Должно быть только одно ребро (прямое с потоком)
 	assert.Len(t, edges, 1)
 	assert.Equal(t, int64(1), edges[0].From)
+}
+
+func TestToFlowEdgesWithOptions(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 5)
+	rg.AddEdgeWithReverse(2, 3, 10, 5)
+	rg.UpdateFlow(1, 2, 6)
+	// 2->3 has no flow
+
+	tests := []struct {
+		name    string
+		opts    *FlowEdgeOptions
+		wantLen int
+	}{
+		{
+			name:    "default_options",
+			opts:    DefaultFlowEdgeOptions(),
+			wantLen: 1, // Only edge with flow
+		},
+		{
+			name: "include_zero_flow",
+			opts: &FlowEdgeOptions{
+				IncludeZeroFlow:    true,
+				IncludeReverseEdge: false,
+				MinFlowThreshold:   0,
+			},
+			wantLen: 2, // Both forward edges
+		},
+		{
+			name: "include_reverse",
+			opts: &FlowEdgeOptions{
+				IncludeZeroFlow:    true,
+				IncludeReverseEdge: true,
+				MinFlowThreshold:   0,
+			},
+			wantLen: 4, // All edges including reverse
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edges := ToFlowEdgesWithOptions(rg, tt.opts)
+			assert.Len(t, edges, tt.wantLen)
+		})
+	}
+}
+
+func TestToAllEdges(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddEdgeWithReverse(2, 3, 10, 0)
+	// No flow
+
+	edges := ToAllEdges(rg)
+
+	assert.Len(t, edges, 2) // Both forward edges, no reverse
+}
+
+func TestToDebugEdges(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+
+	edges := ToDebugEdges(rg)
+
+	assert.Len(t, edges, 2) // Forward + reverse
 }
 
 func TestToPaths_EmptyPaths(t *testing.T) {
 	rg := graph.NewResidualGraph()
 
-	paths := ToPaths([][]int64{}, rg)
+	paths := ToPaths([]PathWithFlow{}, rg)
 
 	assert.Empty(t, paths)
 }
@@ -167,7 +223,9 @@ func TestToPaths_SimplePaths(t *testing.T) {
 	rg.UpdateFlow(1, 2, 5)
 	rg.UpdateFlow(2, 3, 5)
 
-	rawPaths := [][]int64{{1, 2, 3}}
+	rawPaths := []PathWithFlow{
+		{NodeIDs: []int64{1, 2, 3}, Flow: 5.0},
+	}
 
 	paths := ToPaths(rawPaths, rg)
 
@@ -180,7 +238,9 @@ func TestToPaths_SimplePaths(t *testing.T) {
 func TestToPaths_SingleNodePath(t *testing.T) {
 	rg := graph.NewResidualGraph()
 
-	paths := ToPaths([][]int64{{1}}, rg)
+	paths := ToPaths([]PathWithFlow{
+		{NodeIDs: []int64{1}, Flow: 5.0},
+	}, rg)
 
 	// Single node path should be filtered out
 	assert.Empty(t, paths)
@@ -198,14 +258,81 @@ func TestToPaths_MultiplePaths(t *testing.T) {
 	rg.UpdateFlow(1, 3, 3)
 	rg.UpdateFlow(3, 4, 3)
 
-	rawPaths := [][]int64{
-		{1, 2, 4},
-		{1, 3, 4},
+	rawPaths := []PathWithFlow{
+		{NodeIDs: []int64{1, 2, 4}, Flow: 5.0},
+		{NodeIDs: []int64{1, 3, 4}, Flow: 3.0},
 	}
 
 	paths := ToPaths(rawPaths, rg)
 
 	assert.Len(t, paths, 2)
+}
+
+func TestToPathsFromNodeIDs(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 2)
+	rg.AddEdgeWithReverse(2, 3, 5, 3)
+
+	rawPaths := [][]int64{{1, 2, 3}}
+
+	paths := ToPathsFromNodeIDs(rawPaths, rg)
+
+	require.Len(t, paths, 1)
+	assert.Equal(t, []int64{1, 2, 3}, paths[0].NodeIds)
+	assert.Equal(t, 5.0, paths[0].Flow)          // Bottleneck capacity
+	assert.InDelta(t, 25.0, paths[0].Cost, 1e-9) // (2+3) * 5
+}
+
+func TestToPathsFromNodeIDs_SingleNodePath(t *testing.T) {
+	rg := graph.NewResidualGraph()
+
+	paths := ToPathsFromNodeIDs([][]int64{{1}}, rg)
+
+	assert.Empty(t, paths)
+}
+
+func TestToPathsFromNodeIDs_NoEdges(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddNode(1)
+	rg.AddNode(2)
+	rg.AddNode(3)
+	// No edges
+
+	rawPaths := [][]int64{{1, 2, 3}}
+
+	paths := ToPathsFromNodeIDs(rawPaths, rg)
+
+	require.Len(t, paths, 1)
+	assert.Equal(t, 0.0, paths[0].Flow, "Flow should be 0 when edges don't exist")
+}
+
+func TestToPathsWithFlowReconstruction(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 2)
+	rg.AddEdgeWithReverse(2, 3, 10, 3)
+	rg.UpdateFlow(1, 2, 7)
+	rg.UpdateFlow(2, 3, 5) // Different flow values
+
+	rawPaths := [][]int64{{1, 2, 3}}
+
+	paths := ToPathsWithFlowReconstruction(rawPaths, rg)
+
+	require.Len(t, paths, 1)
+	assert.Equal(t, 5.0, paths[0].Flow) // Minimum of 7 and 5
+}
+
+func TestToPathsWithFlowReconstruction_MissingEdge(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1)
+	rg.UpdateFlow(1, 2, 5)
+	// No edge 2->3
+
+	rawPaths := [][]int64{{1, 2, 3}}
+
+	paths := ToPathsWithFlowReconstruction(rawPaths, rg)
+
+	require.Len(t, paths, 1)
+	assert.Equal(t, 0.0, paths[0].Flow)
 }
 
 func TestUpdateGraphWithFlow(t *testing.T) {
@@ -269,7 +396,7 @@ func TestCalculateGraphStatistics_SimpleGraph(t *testing.T) {
 }
 
 func TestCalculateGraphStatistics_CompleteGraph(t *testing.T) {
-	// Полный граф на 4 вершинах (6 ребер)
+	// Complete graph on 4 vertices (6 edges)
 	proto := &commonv1.Graph{
 		Nodes: []*commonv1.Node{
 			{Id: 1}, {Id: 2}, {Id: 3}, {Id: 4},
@@ -299,21 +426,87 @@ func TestCalculateGraphStatistics_SingleNode(t *testing.T) {
 	stats := CalculateGraphStatistics(proto)
 
 	assert.Equal(t, int64(1), stats.NodeCount)
-	assert.Equal(t, 0.0, stats.Density) // Нет ребер
+	assert.Equal(t, 0.0, stats.Density)
 }
 
-func TestToPaths_InfiniteFlow(t *testing.T) {
-	// Граф без рёбер, но с путём - flow останется Infinity и должен стать 0
+func TestToFlowEdgesFiltered(t *testing.T) {
 	rg := graph.NewResidualGraph()
-	rg.AddNode(1)
-	rg.AddNode(2)
-	rg.AddNode(3)
-	// Рёбра НЕ добавляем
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddEdgeWithReverse(2, 3, 10, 0)
+	rg.UpdateFlow(1, 2, 10) // Saturated
+	rg.UpdateFlow(2, 3, 5)  // Partial
 
-	rawPaths := [][]int64{{1, 2, 3}}
+	tests := []struct {
+		name    string
+		filter  EdgeFilter
+		wantLen int
+	}{
+		{
+			name:    "active_edges",
+			filter:  FilterActiveEdges(),
+			wantLen: 2,
+		},
+		{
+			name:    "saturated_edges",
+			filter:  FilterSaturatedEdges(),
+			wantLen: 1, // Only 1->2 is saturated
+		},
+		{
+			name:    "high_utilization_80",
+			filter:  FilterHighUtilization(0.8),
+			wantLen: 1, // Only 1->2 is >= 80%
+		},
+		{
+			name:    "high_utilization_50",
+			filter:  FilterHighUtilization(0.5),
+			wantLen: 2, // Both are >= 50%
+		},
+	}
 
-	paths := ToPaths(rawPaths, rg)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edges := ToFlowEdgesFiltered(rg, tt.filter)
+			assert.Len(t, edges, tt.wantLen)
+		})
+	}
+}
 
-	require.Len(t, paths, 1)
-	assert.Equal(t, 0.0, paths[0].Flow, "Flow should be 0 when edges don't exist")
+func TestFilterByNodes(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddEdgeWithReverse(2, 3, 10, 0)
+	rg.AddEdgeWithReverse(3, 4, 10, 0)
+	rg.UpdateFlow(1, 2, 5)
+	rg.UpdateFlow(2, 3, 5)
+	rg.UpdateFlow(3, 4, 5)
+
+	// Only include edges within nodes {1, 2, 3}
+	nodeSet := map[int64]bool{1: true, 2: true, 3: true}
+	filter := FilterByNodes(nodeSet)
+
+	edges := ToFlowEdgesFiltered(rg, filter)
+
+	assert.Len(t, edges, 2) // 1->2 and 2->3
+}
+
+func TestGetSortedNodeIDs(t *testing.T) {
+	nodes := map[int64]bool{
+		5: true,
+		1: true,
+		3: true,
+		2: true,
+		4: true,
+	}
+
+	sorted := GetSortedNodeIDs(nodes)
+
+	assert.Equal(t, []int64{1, 2, 3, 4, 5}, sorted)
+}
+
+func TestGetSortedNodeIDs_Empty(t *testing.T) {
+	nodes := map[int64]bool{}
+
+	sorted := GetSortedNodeIDs(nodes)
+
+	assert.Empty(t, sorted)
 }

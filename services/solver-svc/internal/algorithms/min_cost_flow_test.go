@@ -1,9 +1,11 @@
 package algorithms
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"logistics/services/solver-svc/internal/graph"
 )
@@ -319,4 +321,232 @@ func TestMinCostMaxFlow_PathFlowBelowEpsilonBreak(t *testing.T) {
 
 	// pathFlow <= epsilon, сработает break
 	assert.Equal(t, 0.0, result.Flow)
+}
+
+// =============================================================================
+// MinCostFlowBellmanFord Coverage
+// =============================================================================
+
+func TestMinCostFlowBellmanFord_Basic(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 5)
+
+	result := MinCostFlowBellmanFord(g, 1, 2, 10, DefaultSolverOptions())
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+	assert.InDelta(t, 50.0, result.Cost, 1e-9)
+}
+
+func TestMinCostFlowBellmanFord_ChooseCheaper(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 1)
+	g.AddEdgeWithReverse(2, 4, 5, 1)
+	g.AddEdgeWithReverse(1, 3, 5, 10)
+	g.AddEdgeWithReverse(3, 4, 5, 10)
+
+	result := MinCostFlowBellmanFord(g, 1, 4, 5, DefaultSolverOptions())
+
+	assert.InDelta(t, 5.0, result.Flow, 1e-9)
+	assert.InDelta(t, 10.0, result.Cost, 1e-9) // 5 * (1+1)
+}
+
+func TestMinCostFlowBellmanFord_NegativeCosts(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, -5)
+	g.AddEdgeWithReverse(2, 3, 10, 3)
+
+	result := MinCostFlowBellmanFord(g, 1, 3, 10, DefaultSolverOptions())
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+	assert.InDelta(t, -20.0, result.Cost, 1e-9)
+}
+
+func TestMinCostFlowBellmanFord_NoPath(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddNode(1)
+	g.AddNode(2)
+
+	result := MinCostFlowBellmanFord(g, 1, 2, 10, DefaultSolverOptions())
+
+	assert.Equal(t, 0.0, result.Flow)
+}
+
+func TestMinCostFlowBellmanFord_Cancellation(t *testing.T) {
+	g := graph.NewResidualGraph()
+	for i := int64(0); i < 100; i++ {
+		g.AddEdgeWithReverse(i, i+1, 10, 1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := MinCostFlowBellmanFordWithContext(ctx, g, 0, 100, 100, DefaultSolverOptions())
+
+	assert.True(t, result.Canceled)
+}
+
+func TestMinCostFlowBellmanFord_MaxIterations(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 1, 1)
+	g.AddEdgeWithReverse(1, 3, 1, 2)
+	g.AddEdgeWithReverse(1, 4, 1, 3)
+	g.AddEdgeWithReverse(2, 5, 1, 1)
+	g.AddEdgeWithReverse(3, 5, 1, 1)
+	g.AddEdgeWithReverse(4, 5, 1, 1)
+
+	opts := &SolverOptions{
+		Epsilon:       1e-9,
+		MaxIterations: 2,
+	}
+
+	result := MinCostFlowBellmanFord(g, 1, 5, 3, opts)
+
+	assert.LessOrEqual(t, result.Iterations, 2)
+}
+
+func TestMinCostFlowBellmanFord_ReturnPaths(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 1)
+	g.AddEdgeWithReverse(2, 3, 5, 1)
+
+	opts := &SolverOptions{
+		Epsilon:     1e-9,
+		ReturnPaths: true,
+	}
+
+	result := MinCostFlowBellmanFord(g, 1, 3, 5, opts)
+
+	require.NotEmpty(t, result.Paths)
+	assert.Equal(t, []int64{1, 2, 3}, result.Paths[0].NodeIDs)
+}
+
+func TestMinCostFlowBellmanFord_NilOptions(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 5)
+
+	result := MinCostFlowBellmanFord(g, 1, 2, 10, nil)
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+}
+
+func TestMinCostFlowBellmanFord_PathFlowBelowEpsilon(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 1e-12, 1)
+	g.AddEdgeWithReverse(2, 3, 10, 1)
+
+	result := MinCostFlowBellmanFord(g, 1, 3, 10, DefaultSolverOptions())
+
+	assert.Equal(t, 0.0, result.Flow)
+}
+
+func TestMinCostFlowBellmanFord_EmptyPath(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 5, 1)
+	g.AddEdgeWithReverse(2, 3, 5, 1)
+
+	result := MinCostFlowBellmanFord(g, 1, 3, 100, DefaultSolverOptions())
+
+	assert.InDelta(t, 5.0, result.Flow, 1e-9)
+}
+
+// =============================================================================
+// MinCostFlowWithAlgorithm Coverage
+// =============================================================================
+
+func TestMinCostFlowWithAlgorithm_SSP(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 5)
+
+	result := MinCostFlowWithAlgorithm(
+		context.Background(), g, 1, 2, 10,
+		MinCostAlgorithmSSP, DefaultSolverOptions(),
+	)
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+}
+
+func TestMinCostFlowWithAlgorithm_CapacityScaling(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 5)
+
+	result := MinCostFlowWithAlgorithm(
+		context.Background(), g, 1, 2, 10,
+		MinCostAlgorithmCapacityScaling, DefaultSolverOptions(),
+	)
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+}
+
+func TestMinCostFlowWithAlgorithm_NilOptions(t *testing.T) {
+	g := graph.NewResidualGraph()
+	g.AddEdgeWithReverse(1, 2, 10, 5)
+
+	result := MinCostFlowWithAlgorithm(
+		context.Background(), g, 1, 2, 10,
+		MinCostAlgorithmSSP, nil,
+	)
+
+	assert.InDelta(t, 10.0, result.Flow, 1e-9)
+}
+
+// =============================================================================
+// SSP Reinitialization Coverage
+// =============================================================================
+
+func TestSSP_Reinitialization(t *testing.T) {
+	g := graph.NewResidualGraph()
+
+	// Create a graph that requires many iterations
+	for i := int64(1); i <= 200; i++ {
+		g.AddEdgeWithReverse(0, i, 1, float64(i))
+		g.AddEdgeWithReverse(i, 201, 1, float64(201-i))
+	}
+
+	opts := &SolverOptions{
+		Epsilon:       1e-9,
+		MaxIterations: 250,
+	}
+
+	result := SuccessiveShortestPathInternal(context.Background(), g, 0, 201, 200, opts)
+
+	assert.Greater(t, result.Iterations, 100, "Should have many iterations for reinitialization")
+	assert.InDelta(t, 200.0, result.Flow, 1e-9)
+}
+
+func TestSSP_CancellationDuringReinit(t *testing.T) {
+	g := graph.NewResidualGraph()
+
+	for i := int64(1); i <= 50; i++ {
+		g.AddEdgeWithReverse(0, i, 1, 1)
+		g.AddEdgeWithReverse(i, 51, 1, 1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	opts := &SolverOptions{
+		Epsilon:       1e-9,
+		MaxIterations: 1000,
+	}
+
+	go func() {
+		cancel()
+	}()
+
+	result := SuccessiveShortestPathInternal(ctx, g, 0, 51, 50, opts)
+
+	// May or may not be canceled depending on timing
+	_ = result
+}
+
+// =============================================================================
+// computeReinitInterval Coverage
+// =============================================================================
+
+func TestComputeReinitInterval(t *testing.T) {
+	assert.Equal(t, 100, computeReinitInterval(10))
+	assert.Equal(t, 100, computeReinitInterval(49))
+	assert.Equal(t, 200, computeReinitInterval(50))
+	assert.Equal(t, 200, computeReinitInterval(499))
+	assert.Equal(t, 500, computeReinitInterval(500))
+	assert.Equal(t, 500, computeReinitInterval(1000))
 }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect } from "react";
+import { useCallback, useMemo, useEffect, useState } from "react";
 import ReactFlow, {
   Node as RFNode,
   Edge as RFEdge,
@@ -22,10 +22,15 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import { useGraphStore } from "@/stores/graphStore";
 import { NodeType } from "@gen/logistics/common/v1/common_pb";
+import Modal from "@/components/ui/Modal";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
+import Button from "@/components/ui/Button";
 import clsx from "clsx";
+import toast from "react-hot-toast";
 
 // ============================================================================
-// Цвета для типов узлов
+// Конфигурация типов узлов
 // ============================================================================
 
 const NODE_STYLES: Record<
@@ -73,6 +78,14 @@ const NODE_ICONS: Record<number, string> = {
   [NodeType.SINK]: "🔴",
 };
 
+const NODE_TYPE_OPTIONS = [
+  { value: NodeType.SOURCE, label: "🟢 Источник" },
+  { value: NodeType.SINK, label: "🔴 Сток" },
+  { value: NodeType.WAREHOUSE, label: "📦 Склад" },
+  { value: NodeType.DELIVERY_POINT, label: "📍 Точка доставки" },
+  { value: NodeType.INTERSECTION, label: "⚫ Перекрёсток" },
+];
+
 // ============================================================================
 // Custom Node Component
 // ============================================================================
@@ -96,14 +109,12 @@ function CustomNode({ data, selected }: NodeProps) {
         isSink && "ring-red-400",
       )}
     >
-      {/* Входной handle (слева) */}
       <Handle
         type="target"
         position={Position.Left}
         className="w-3! h-3! bg-blue-500! border-2! border-white!"
       />
 
-      {/* Содержимое узла */}
       <div className="flex items-center gap-2">
         <span className="text-lg">{icon}</span>
         <div className="flex-1 min-w-0">
@@ -118,7 +129,6 @@ function CustomNode({ data, selected }: NodeProps) {
         </div>
       </div>
 
-      {/* Выходной handle (справа) */}
       <Handle
         type="source"
         position={Position.Right}
@@ -158,13 +168,12 @@ function CustomEdge({
   const cost = (data?.cost as number) ?? 0;
   const utilization = capacity > 0 ? flow / capacity : 0;
 
-  // Цвет в зависимости от загрузки
   const getEdgeColor = () => {
-    if (utilization >= 1) return "#ef4444"; // red - перегружено
-    if (utilization >= 0.9) return "#f97316"; // orange - почти полное
-    if (utilization >= 0.5) return "#eab308"; // yellow - средняя загрузка
-    if (flow > 0) return "#22c55e"; // green - есть поток
-    return "#6b7280"; // gray - нет потока
+    if (utilization >= 1) return "#ef4444";
+    if (utilization >= 0.9) return "#f97316";
+    if (utilization >= 0.5) return "#eab308";
+    if (flow > 0) return "#22c55e";
+    return "#6b7280";
   };
 
   const edgeColor = getEdgeColor();
@@ -172,7 +181,6 @@ function CustomEdge({
 
   return (
     <>
-      {/* Основная линия ребра */}
       <path
         id={id}
         className="react-flow__edge-path"
@@ -181,12 +189,9 @@ function CustomEdge({
         stroke={edgeColor}
         fill="none"
         markerEnd={markerEnd}
-        style={{
-          strokeDasharray: flow === 0 ? "5,5" : undefined,
-        }}
+        style={{ strokeDasharray: flow === 0 ? "5,5" : undefined }}
       />
 
-      {/* Подсветка при выборе */}
       {selected && (
         <path
           d={edgePath}
@@ -197,7 +202,6 @@ function CustomEdge({
         />
       )}
 
-      {/* Лейбл с информацией */}
       <EdgeLabelRenderer>
         <div
           style={{
@@ -214,7 +218,6 @@ function CustomEdge({
               "hover:scale-105 transition-transform cursor-pointer",
             )}
           >
-            {/* Поток / Capacity */}
             <div className="flex items-center gap-1">
               <span
                 className={clsx(
@@ -227,15 +230,11 @@ function CustomEdge({
               <span className="text-gray-400">/</span>
               <span className="text-gray-700 font-semibold">{capacity}</span>
             </div>
-
-            {/* Стоимость */}
             {cost > 0 && (
               <div className="text-gray-500 text-center">
                 ₽{cost.toFixed(1)}
               </div>
             )}
-
-            {/* Индикатор загрузки */}
             {capacity > 0 && (
               <div className="w-full h-1 bg-gray-200 rounded-full mt-1 overflow-hidden">
                 <div
@@ -260,17 +259,251 @@ function CustomEdge({
   );
 }
 
+const nodeTypes: NodeTypes = { custom: CustomNode };
+const edgeTypes: EdgeTypes = { custom: CustomEdge };
+
 // ============================================================================
-// Node & Edge Types
+// Модальные окна редактирования
 // ============================================================================
 
-const nodeTypes: NodeTypes = {
-  custom: CustomNode,
-};
+interface EditNodeModalProps {
+  open: boolean;
+  onClose: () => void;
+  node: { id: bigint; name?: string; type: number } | null;
+  sourceId: bigint | null;
+  sinkId: bigint | null;
+  onUpdate: (id: bigint, updates: { name?: string; type?: number }) => void;
+  onDelete: (id: bigint) => void;
+  onSetSource: (id: bigint) => void;
+  onSetSink: (id: bigint) => void;
+}
 
-const edgeTypes: EdgeTypes = {
-  custom: CustomEdge,
-};
+function EditNodeModal({
+  open,
+  onClose,
+  node,
+  sourceId,
+  sinkId,
+  onUpdate,
+  onDelete,
+  onSetSource,
+  onSetSink,
+}: EditNodeModalProps) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<number>(NodeType.INTERSECTION);
+
+  useEffect(() => {
+    if (node) {
+      setName(node.name ?? "");
+      setType(node.type);
+    }
+  }, [node]);
+
+  if (!node) return null;
+
+  const isSource = node.id === sourceId;
+  const isSink = node.id === sinkId;
+  const hasSource = sourceId !== null;
+  const hasSink = sinkId !== null;
+
+  const handleSave = () => {
+    onUpdate(node.id, { name, type });
+    onClose();
+  };
+
+  const handleSetSource = () => {
+    if (hasSource && !isSource) {
+      toast.error("Источник уже установлен. Удалите текущий источник.");
+      return;
+    }
+    onSetSource(node.id);
+    onClose();
+  };
+
+  const handleSetSink = () => {
+    if (hasSink && !isSink) {
+      toast.error("Сток уже установлен. Удалите текущий сток.");
+      return;
+    }
+    onSetSink(node.id);
+    onClose();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Редактировать узел #${String(node.id)}`}
+      size="sm"
+    >
+      <div className="space-y-4">
+        <Input
+          label="Название"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <Select
+          label="Тип узла"
+          value={type}
+          onChange={(e) => setType(Number(e.target.value))}
+          options={NODE_TYPE_OPTIONS.map((o) => ({
+            value: o.value,
+            label: o.label,
+          }))}
+        />
+
+        {/* Source/Sink status */}
+        <div className="flex gap-2">
+          {isSource ? (
+            <div className="flex-1 p-2 bg-green-50 border border-green-200 rounded text-center text-sm text-green-700">
+              ✓ Источник
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSetSource}
+              disabled={hasSource && !isSource}
+              className="flex-1"
+            >
+              Сделать источником
+            </Button>
+          )}
+
+          {isSink ? (
+            <div className="flex-1 p-2 bg-red-50 border border-red-200 rounded text-center text-sm text-red-700">
+              ✓ Сток
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSetSink}
+              disabled={hasSink && !isSink}
+              className="flex-1"
+            >
+              Сделать стоком
+            </Button>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-2 border-t">
+          <Button onClick={handleSave} className="flex-1">
+            Сохранить
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              onDelete(node.id);
+              onClose();
+            }}
+          >
+            Удалить
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+interface EditEdgeModalProps {
+  open: boolean;
+  onClose: () => void;
+  edge: {
+    from: bigint;
+    to: bigint;
+    capacity: number;
+    cost: number;
+    currentFlow?: number;
+  } | null;
+  onUpdate: (
+    from: bigint,
+    to: bigint,
+    updates: { capacity?: number; cost?: number },
+  ) => void;
+  onDelete: (from: bigint, to: bigint) => void;
+}
+
+function EditEdgeModal({
+  open,
+  onClose,
+  edge,
+  onUpdate,
+  onDelete,
+}: EditEdgeModalProps) {
+  const [capacity, setCapacity] = useState(10);
+  const [cost, setCost] = useState(1);
+
+  useEffect(() => {
+    if (edge) {
+      setCapacity(edge.capacity);
+      setCost(edge.cost);
+    }
+  }, [edge]);
+
+  if (!edge) return null;
+
+  const handleSave = () => {
+    onUpdate(edge.from, edge.to, { capacity, cost });
+    onClose();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Ребро ${String(edge.from)} → ${String(edge.to)}`}
+      size="sm"
+    >
+      <div className="space-y-4">
+        <Input
+          label="Пропускная способность"
+          type="number"
+          value={capacity}
+          onChange={(e) => setCapacity(Number(e.target.value))}
+          min={1}
+        />
+
+        <Input
+          label="Стоимость за единицу"
+          type="number"
+          value={cost}
+          onChange={(e) => setCost(Number(e.target.value))}
+          min={0}
+          step={0.1}
+        />
+
+        {edge.currentFlow !== undefined && edge.currentFlow > 0 && (
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              Текущий поток: <strong>{edge.currentFlow}</strong> /{" "}
+              {edge.capacity}
+            </p>
+            <p className="text-xs text-blue-600">
+              Загрузка: {((edge.currentFlow / edge.capacity) * 100).toFixed(1)}%
+            </p>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2 border-t">
+          <Button onClick={handleSave} className="flex-1">
+            Сохранить
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              onDelete(edge.from, edge.to);
+              onClose();
+            }}
+          >
+            Удалить
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 // ============================================================================
 // GraphCanvas Component
@@ -279,14 +512,12 @@ const edgeTypes: EdgeTypes = {
 interface GraphCanvasProps {
   onNodeSelect?: (nodeId: bigint | null) => void;
   onEdgeSelect?: (edge: { from: bigint; to: bigint } | null) => void;
-  onNodeAdd?: (x: number, y: number) => void;
   readOnly?: boolean;
 }
 
 export default function GraphCanvas({
   onNodeSelect,
   onEdgeSelect,
-  onNodeAdd,
   readOnly = false,
 }: GraphCanvasProps) {
   const {
@@ -296,26 +527,42 @@ export default function GraphCanvas({
     sinkId,
     solvedGraph,
     addEdge: addGraphEdge,
+    updateNode,
+    updateEdge,
+    removeNode,
+    removeEdge,
     selectNode,
     selectEdge,
-    updateNode,
+    setSourceSink,
   } = useGraphStore();
 
-  // Определяем какие данные использовать
+  // Модальные окна
+  const [editingNode, setEditingNode] = useState<{
+    id: bigint;
+    name?: string;
+    type: number;
+  } | null>(null);
+
+  const [editingEdge, setEditingEdge] = useState<{
+    from: bigint;
+    to: bigint;
+    capacity: number;
+    cost: number;
+    currentFlow?: number;
+  } | null>(null);
+
   const displayNodes = solvedGraph?.nodes ?? graphNodes;
   const displayEdges = solvedGraph?.edges ?? graphEdges;
 
-  // Конвертируем узлы в формат ReactFlow
+  // Конвертация в ReactFlow формат
   const rfNodes = useMemo<RFNode[]>(() => {
     return displayNodes.map((node) => ({
       id: String(node.id),
       type: "custom",
-      position: { x: node.x * 120, y: node.y * 120 }, // Увеличенный масштаб
+      position: { x: node.x * 120, y: node.y * 120 },
       data: {
         label: node.name || `Узел ${node.id}`,
         nodeType: node.type,
-        supply: node.supply || 0,
-        demand: node.demand || 0,
         isSource: node.id === sourceId,
         isSink: node.id === sinkId,
       },
@@ -323,7 +570,6 @@ export default function GraphCanvas({
     }));
   }, [displayNodes, sourceId, sinkId, readOnly]);
 
-  // Конвертируем рёбра в формат ReactFlow
   const rfEdges = useMemo<RFEdge[]>(() => {
     return displayEdges.map((edge) => ({
       id: `e${edge.from}-${edge.to}`,
@@ -344,11 +590,9 @@ export default function GraphCanvas({
     }));
   }, [displayEdges]);
 
-  // ReactFlow state
   const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges);
 
-  // Синхронизация при изменении данных
   useEffect(() => {
     setNodes(rfNodes);
   }, [rfNodes, setNodes]);
@@ -357,7 +601,7 @@ export default function GraphCanvas({
     setEdges(rfEdges);
   }, [rfEdges, setEdges]);
 
-  // Обработчик соединения узлов
+  // Соединение узлов
   const onConnect = useCallback(
     (connection: Connection) => {
       if (readOnly || !connection.source || !connection.target) return;
@@ -365,25 +609,19 @@ export default function GraphCanvas({
       const from = BigInt(connection.source);
       const to = BigInt(connection.target);
 
-      // Проверяем, что ребро не к самому себе
       if (from === to) return;
 
-      // Добавляем ребро в store
-      const edge = addGraphEdge({
-        from,
-        to,
-        capacity: 10,
-        cost: 1,
-      });
-
+      const edge = addGraphEdge({ from, to, capacity: 10, cost: 1 });
       if (edge) {
-        console.log("Edge added:", edge);
+        toast.success("Ребро добавлено");
+      } else {
+        toast.error("Ребро уже существует");
       }
     },
     [readOnly, addGraphEdge],
   );
 
-  // Обработчик клика на узел
+  // Одинарный клик - выбор для левой панели
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: RFNode) => {
       const nodeId = BigInt(node.id);
@@ -393,10 +631,26 @@ export default function GraphCanvas({
     [selectNode, onNodeSelect],
   );
 
-  // Обработчик клика на ребро
+  // Двойной клик на узел - открыть модалку редактирования
+  const onNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: RFNode) => {
+      if (readOnly) return;
+
+      const graphNode = graphNodes.find((n) => String(n.id) === node.id);
+      if (graphNode) {
+        setEditingNode({
+          id: graphNode.id,
+          name: graphNode.name,
+          type: graphNode.type,
+        });
+      }
+    },
+    [readOnly, graphNodes],
+  );
+
+  // Одинарный клик на ребро
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, edge: RFEdge) => {
-      // Извлекаем ID из формата "e{from}-{to}"
       const match = edge.id.match(/^e(\d+)-(\d+)$/);
       if (match) {
         const from = BigInt(match[1]);
@@ -408,7 +662,33 @@ export default function GraphCanvas({
     [selectEdge, onEdgeSelect],
   );
 
-  // Обработчик клика на пустое место
+  // Двойной клик на ребро - открыть модалку
+  const onEdgeDoubleClick = useCallback(
+    (_: React.MouseEvent, edge: RFEdge) => {
+      if (readOnly) return;
+
+      const match = edge.id.match(/^e(\d+)-(\d+)$/);
+      if (match) {
+        const from = BigInt(match[1]);
+        const to = BigInt(match[2]);
+        const graphEdge = graphEdges.find(
+          (e) => e.from === from && e.to === to,
+        );
+        if (graphEdge) {
+          setEditingEdge({
+            from: graphEdge.from,
+            to: graphEdge.to,
+            capacity: graphEdge.capacity,
+            cost: graphEdge.cost ?? 0,
+            currentFlow: graphEdge.currentFlow,
+          });
+        }
+      }
+    },
+    [readOnly, graphEdges],
+  );
+
+  // Клик на пустое место
   const onPaneClick = useCallback(() => {
     selectNode(null);
     selectEdge(null);
@@ -416,36 +696,67 @@ export default function GraphCanvas({
     onEdgeSelect?.(null);
   }, [selectNode, selectEdge, onNodeSelect, onEdgeSelect]);
 
-  // Обработчик двойного клика для добавления узла
-  const onDoubleClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (readOnly) return;
-
-      // Получаем позицию относительно viewport
-      const target = event.currentTarget as HTMLElement;
-      const bounds = target.getBoundingClientRect();
-
-      // Конвертируем в координаты графа
-      const x = (event.clientX - bounds.left) / 120;
-      const y = (event.clientY - bounds.top) / 120;
-
-      onNodeAdd?.(x, y);
-    },
-    [readOnly, onNodeAdd],
-  );
-
-  // Обработчик перемещения узла
+  // Синхронизация позиций при перетаскивании
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: RFNode) => {
       if (readOnly) return;
-
-      const nodeId = BigInt(node.id);
-      updateNode(nodeId, {
+      updateNode(BigInt(node.id), {
         x: node.position.x / 120,
         y: node.position.y / 120,
       });
     },
     [readOnly, updateNode],
+  );
+
+  // Обработчики модалок
+  const handleUpdateNode = useCallback(
+    (id: bigint, updates: { name?: string; type?: number }) => {
+      updateNode(id, updates);
+    },
+    [updateNode],
+  );
+
+  const handleDeleteNode = useCallback(
+    (id: bigint) => {
+      removeNode(id);
+      toast.success("Узел удалён");
+    },
+    [removeNode],
+  );
+
+  const handleSetSource = useCallback(
+    (id: bigint) => {
+      setSourceSink(id, sinkId);
+      toast.success("Источник установлен");
+    },
+    [setSourceSink, sinkId],
+  );
+
+  const handleSetSink = useCallback(
+    (id: bigint) => {
+      setSourceSink(sourceId, id);
+      toast.success("Сток установлен");
+    },
+    [setSourceSink, sourceId],
+  );
+
+  const handleUpdateEdge = useCallback(
+    (
+      from: bigint,
+      to: bigint,
+      updates: { capacity?: number; cost?: number },
+    ) => {
+      updateEdge(from, to, updates);
+    },
+    [updateEdge],
+  );
+
+  const handleDeleteEdge = useCallback(
+    (from: bigint, to: bigint) => {
+      removeEdge(from, to);
+      toast.success("Ребро удалено");
+    },
+    [removeEdge],
   );
 
   return (
@@ -457,9 +768,10 @@ export default function GraphCanvas({
         onEdgesChange={readOnly ? undefined : onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
+        onEdgeDoubleClick={onEdgeDoubleClick}
         onPaneClick={onPaneClick}
-        onDoubleClick={onDoubleClick}
         onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -468,11 +780,7 @@ export default function GraphCanvas({
         fitViewOptions={{ padding: 0.2 }}
         defaultEdgeOptions={{
           type: "custom",
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 15,
-            height: 15,
-          },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
         }}
         connectionLineStyle={{
           stroke: "#3b82f6",
@@ -508,15 +816,36 @@ export default function GraphCanvas({
       {/* Подсказки */}
       <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm px-3 py-2 text-xs text-gray-600 space-y-1">
         <p>
-          🖱️ <strong>Двойной клик</strong> — добавить узел
-        </p>
-        <p>
           🔗 <strong>Перетащите</strong> от ● к ● — создать ребро
         </p>
         <p>
-          📍 <strong>Клик</strong> на элемент — выбрать для редактирования
+          📍 <strong>Клик</strong> — выбрать элемент
+        </p>
+        <p>
+          ✏️ <strong>Двойной клик</strong> — редактировать
         </p>
       </div>
+
+      {/* Модальные окна */}
+      <EditNodeModal
+        open={editingNode !== null}
+        onClose={() => setEditingNode(null)}
+        node={editingNode}
+        sourceId={sourceId}
+        sinkId={sinkId}
+        onUpdate={handleUpdateNode}
+        onDelete={handleDeleteNode}
+        onSetSource={handleSetSource}
+        onSetSink={handleSetSink}
+      />
+
+      <EditEdgeModal
+        open={editingEdge !== null}
+        onClose={() => setEditingEdge(null)}
+        edge={editingEdge}
+        onUpdate={handleUpdateEdge}
+        onDelete={handleDeleteEdge}
+      />
     </div>
   );
 }

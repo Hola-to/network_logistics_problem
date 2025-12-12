@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -616,20 +617,18 @@ func TestResidualEdge_ResidualCapacity(t *testing.T) {
 	tests := []struct {
 		name     string
 		capacity float64
-		flow     float64
 		want     float64
 	}{
-		{"no flow", 10.0, 0.0, 10.0},
-		{"partial flow", 10.0, 3.0, 7.0},
-		{"full flow", 10.0, 10.0, 0.0},
-		{"zero capacity", 0.0, 0.0, 0.0},
+		{"no flow", 10.0, 10.0},
+		{"partial flow", 7.0, 7.0},
+		{"full flow", 0.0, 0.0},
+		{"zero capacity", 0.0, 0.0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			edge := &ResidualEdge{
 				Capacity: tt.capacity,
-				Flow:     tt.flow,
 			}
 			if got := edge.ResidualCapacity(); got != tt.want {
 				t.Errorf("ResidualCapacity() = %f, want %f", got, tt.want)
@@ -642,20 +641,18 @@ func TestResidualEdge_HasCapacity(t *testing.T) {
 	tests := []struct {
 		name     string
 		capacity float64
-		flow     float64
 		want     bool
 	}{
-		{"has capacity", 10.0, 3.0, true},
-		{"no capacity", 10.0, 10.0, false},
-		{"epsilon capacity", 10.0, 10.0 - Epsilon/2, false},
-		{"just above epsilon", 10.0, 9.0, true},
+		{"has capacity", 7.0, true},
+		{"no capacity", 0.0, false},
+		{"epsilon capacity", Epsilon / 2, false},
+		{"just above epsilon", Epsilon * 2, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			edge := &ResidualEdge{
 				Capacity: tt.capacity,
-				Flow:     tt.flow,
 			}
 			if got := edge.HasCapacity(); got != tt.want {
 				t.Errorf("HasCapacity() = %v, want %v", got, tt.want)
@@ -671,18 +668,20 @@ func TestResidualGraph_Concurrency(t *testing.T) {
 	for i := int64(0); i < 100; i++ {
 		rg.AddNode(i)
 	}
-
 	for i := int64(0); i < 99; i++ {
 		rg.AddEdgeWithReverse(i, i+1, 100.0, 1.0)
 	}
 
+	// Pre-compute sorted nodes to avoid write during concurrent reads
+	_ = rg.GetSortedNodes()
+
 	done := make(chan bool)
 
-	// Multiple goroutines reading
+	// Multiple goroutines reading (теперь действительно только чтение)
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				_ = rg.GetNodes()
+				_ = rg.GetSortedNodes() // Теперь возвращает cached
 				_ = rg.GetNeighbors(50)
 				_ = rg.GetEdge(25, 26)
 				_ = rg.NodeCount()
@@ -815,4 +814,213 @@ func TestResidualGraph_AntiParallelFlow(t *testing.T) {
 	// 2->1: остаётся прямым ребром, capacity увеличилась на flow (для возможности отмены)
 	assert.False(t, edge21.IsReverse)
 	assert.Equal(t, 13.0, edge21.Capacity) // 5 original + 8 cancellation
+}
+
+func TestResidualGraph_GetNeighborsList(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1)
+	rg.AddEdgeWithReverse(1, 3, 20, 2)
+	rg.AddEdgeWithReverse(1, 4, 30, 3)
+
+	neighbors := rg.GetNeighborsList(1)
+
+	assert.Len(t, neighbors, 3)
+	// Verify they're in insertion order
+	assert.Equal(t, int64(2), neighbors[0].To)
+	assert.Equal(t, int64(3), neighbors[1].To)
+	assert.Equal(t, int64(4), neighbors[2].To)
+}
+
+func TestResidualGraph_GetNeighborsList_Empty(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddNode(1)
+
+	neighbors := rg.GetNeighborsList(1)
+
+	assert.Empty(t, neighbors)
+}
+
+func TestResidualGraph_GetNeighborsList_Unknown(t *testing.T) {
+	rg := NewResidualGraph()
+
+	neighbors := rg.GetNeighborsList(999)
+
+	assert.Nil(t, neighbors)
+}
+
+func TestResidualGraph_GetIncomingEdgesList(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 4, 10, 1)
+	rg.AddEdgeWithReverse(2, 4, 20, 2)
+	rg.AddEdgeWithReverse(3, 4, 30, 3)
+
+	incoming := rg.GetIncomingEdgesList(4)
+
+	assert.Len(t, incoming, 3)
+	// Should be sorted by From ID
+	assert.Equal(t, int64(1), incoming[0].From)
+	assert.Equal(t, int64(2), incoming[1].From)
+	assert.Equal(t, int64(3), incoming[2].From)
+}
+
+func TestResidualGraph_GetIncomingEdgesList_Empty(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddNode(1)
+
+	incoming := rg.GetIncomingEdgesList(1)
+
+	assert.Nil(t, incoming)
+}
+
+func TestResidualGraph_GetSortedNodes(t *testing.T) {
+	rg := NewResidualGraph()
+	// Add nodes in random order
+	rg.AddNode(5)
+	rg.AddNode(1)
+	rg.AddNode(3)
+	rg.AddNode(2)
+	rg.AddNode(4)
+
+	sorted := rg.GetSortedNodes()
+
+	assert.Equal(t, []int64{1, 2, 3, 4, 5}, sorted)
+}
+
+func TestResidualGraph_GetSortedNodes_Cached(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddNode(3)
+	rg.AddNode(1)
+	rg.AddNode(2)
+
+	// First call computes
+	sorted1 := rg.GetSortedNodes()
+	// Second call should return cached
+	sorted2 := rg.GetSortedNodes()
+
+	assert.Equal(t, sorted1, sorted2)
+
+	// Add new node - should invalidate cache
+	rg.AddNode(4)
+	sorted3 := rg.GetSortedNodes()
+
+	assert.Equal(t, []int64{1, 2, 3, 4}, sorted3)
+}
+
+func TestResidualGraph_CloneToPooled(t *testing.T) {
+	pool := GetPool()
+	original := NewResidualGraph()
+	original.AddEdgeWithReverse(1, 2, 10, 5)
+	original.AddEdgeWithReverse(2, 3, 20, 10)
+	original.UpdateFlow(1, 2, 5)
+
+	clone := original.CloneToPooled(pool)
+	defer pool.ReleaseGraph(clone)
+
+	// Verify data equality
+	assert.Equal(t, original.NodeCount(), clone.NodeCount())
+
+	origEdge := original.GetEdge(1, 2)
+	cloneEdge := clone.GetEdge(1, 2)
+
+	assert.True(t, origEdge != cloneEdge, "Should be different pointer objects")
+
+	assert.Equal(t, origEdge.Flow, cloneEdge.Flow)
+	assert.Equal(t, origEdge.Capacity, cloneEdge.Capacity)
+}
+
+func TestResidualGraph_GetAllEdges(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1)
+	rg.AddEdgeWithReverse(2, 3, 20, 2)
+
+	allEdges := rg.GetAllEdges()
+
+	assert.Len(t, allEdges, 2) // Only forward edges
+	for _, edge := range allEdges {
+		assert.False(t, edge.IsReverse)
+	}
+}
+
+func TestResidualGraph_Clear(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1)
+	rg.AddEdgeWithReverse(2, 3, 20, 2)
+	rg.UpdateFlow(1, 2, 5)
+
+	assert.Equal(t, 3, rg.NodeCount())
+
+	rg.Clear()
+
+	assert.Equal(t, 0, rg.NodeCount())
+	assert.Equal(t, 0, rg.EdgeCount())
+}
+
+func TestSafeResidualGraph(t *testing.T) {
+	sg := NewSafeResidualGraph()
+
+	// Write operations
+	sg.WithWriteLock(func(g *ResidualGraph) {
+		g.AddNode(1)
+		g.AddNode(2)
+		g.AddEdgeWithReverse(1, 2, 10, 1)
+	})
+
+	// Read operations
+	var nodeCount int
+	sg.WithReadLock(func(g *ResidualGraph) {
+		nodeCount = g.NodeCount()
+	})
+
+	assert.Equal(t, 2, nodeCount)
+}
+
+func TestSafeResidualGraph_CloneUnsafe(t *testing.T) {
+	sg := NewSafeResidualGraph()
+
+	sg.WithWriteLock(func(g *ResidualGraph) {
+		g.AddEdgeWithReverse(1, 2, 10, 1)
+	})
+
+	clone := sg.CloneUnsafe()
+
+	assert.Equal(t, 2, clone.NodeCount())
+	assert.NotNil(t, clone.GetEdge(1, 2))
+}
+
+func TestSafeResidualGraph_ClonePooled(t *testing.T) {
+	pool := GetPool()
+	sg := NewSafeResidualGraph()
+
+	sg.WithWriteLock(func(g *ResidualGraph) {
+		g.AddEdgeWithReverse(1, 2, 10, 1)
+	})
+
+	clone := sg.ClonePooled(pool)
+	defer pool.ReleaseGraph(clone)
+
+	assert.Equal(t, 2, clone.NodeCount())
+}
+
+func TestSafeResidualGraph_ConcurrentReads(t *testing.T) {
+	sg := NewSafeResidualGraph()
+
+	sg.WithWriteLock(func(g *ResidualGraph) {
+		for i := int64(1); i <= 100; i++ {
+			g.AddNode(i)
+		}
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sg.WithReadLock(func(g *ResidualGraph) {
+				_ = g.NodeCount()
+				_ = g.GetSortedNodes()
+			})
+		}()
+	}
+
+	wg.Wait()
 }

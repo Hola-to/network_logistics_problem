@@ -1,7 +1,9 @@
 package algorithms
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"logistics/services/solver-svc/internal/graph"
 
@@ -327,7 +329,7 @@ func TestEdmondsKarp_ReturnPaths(t *testing.T) {
 	result := EdmondsKarp(g, 1, 3, opts)
 
 	require.NotEmpty(t, result.Paths)
-	assert.Equal(t, []int64{1, 2, 3}, result.Paths[0])
+	assert.Equal(t, []int64{1, 2, 3}, result.Paths[0].NodeIDs)
 }
 
 func TestEdmondsKarp_NilOptions(t *testing.T) {
@@ -406,4 +408,20 @@ func TestEdmondsKarp_PathFlowZeroAfterSaturation(t *testing.T) {
 
 	// pathFlow будет <= epsilon, сработает break
 	assert.Equal(t, 0.0, result.MaxFlow)
+}
+
+func TestEdmondsKarp_ContextTimeout(t *testing.T) {
+	g := graph.NewResidualGraph()
+	for i := int64(0); i < 1000; i++ {
+		g.AddEdgeWithReverse(i, i+1, 1, 0)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+
+	time.Sleep(1 * time.Millisecond)
+
+	result := EdmondsKarpWithContext(ctx, g, 0, 1000, DefaultSolverOptions())
+
+	assert.True(t, result.Canceled)
 }

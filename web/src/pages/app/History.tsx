@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import toast from "react-hot-toast";
-import { TrashIcon, EyeIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, EyeIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
@@ -15,6 +15,7 @@ import { Algorithm } from "@gen/logistics/common/v1/common_pb";
 import type {
   CalculationSummary,
   CalculationRecord,
+  ListCalculationsResponse,
 } from "@gen/logistics/gateway/v1/gateway_pb";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 
@@ -35,11 +36,18 @@ export default function History() {
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  // Запрос списка расчётов
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["calculations"],
-    queryFn: () => historyService.list({ limit: 50 }),
+    queryFn: async () => {
+      console.log("📡 Fetching calculations...");
+      const response = await historyService.list({ limit: 50 });
+      console.log("📥 Calculations response:", response);
+      return response as ListCalculationsResponse;
+    },
   });
 
+  // Удаление
   const deleteMutation = useMutation({
     mutationFn: (id: string) => historyService.deleteCalculation(id),
     onSuccess: () => {
@@ -49,12 +57,16 @@ export default function History() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  // Загрузка деталей
   const loadMutation = useMutation({
     mutationFn: (id: string) => historyService.getCalculation(id),
     onSuccess: (response: CalculationRecord) => {
+      console.log("📥 Loaded calculation:", response);
       if (response.graph) {
         loadGraph(response.graph);
-        toast.success("Граф загружен");
+        toast.success("Граф загружен в редактор");
+      } else {
+        toast.error("Граф не найден в записи");
       }
     },
     onError: (error: Error) => toast.error(error.message),
@@ -70,6 +82,10 @@ export default function History() {
     setDetailsOpen(false);
   };
 
+  // Получаем список расчётов
+  const calculations = data?.calculations ?? [];
+  const totalCount = data?.totalCount ?? 0n;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -78,25 +94,57 @@ export default function History() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900">История расчётов</h1>
+        <Card className="bg-red-50 border-red-200">
+          <p className="text-red-800">
+            Ошибка загрузки: {(error as Error).message}
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => refetch()}
+            className="mt-4"
+          >
+            <ArrowPathIcon className="w-4 h-4 mr-2" />
+            Повторить
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">История расчётов</h1>
-        <p className="text-sm text-gray-500">
-          Всего: {data?.totalCount?.toString() ?? 0}
-        </p>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={() => refetch()}>
+            <ArrowPathIcon className="w-4 h-4 mr-1" />
+            Обновить
+          </Button>
+          <p className="text-sm text-gray-500">Всего: {String(totalCount)}</p>
+        </div>
       </div>
 
-      {!data?.calculations?.length ? (
-        <Card className="text-center py-8">
-          <p className="text-gray-500">Нет сохранённых расчётов</p>
+      {calculations.length === 0 ? (
+        <Card className="text-center py-12">
+          <div className="text-gray-400 text-5xl mb-4">📊</div>
+          <p className="text-gray-500 text-lg">Нет сохранённых расчётов</p>
           <p className="text-sm text-gray-400 mt-2">
-            Создайте граф и запустите оптимизацию
+            Создайте граф в редакторе сети, запустите оптимизацию и нажмите
+            "Сохранить"
           </p>
+          <div className="mt-6">
+            <a href="/network">
+              <Button>Перейти в редактор</Button>
+            </a>
+          </div>
         </Card>
       ) : (
         <div className="space-y-4">
-          {data.calculations.map((calc: CalculationSummary) => (
+          {calculations.map((calc: CalculationSummary) => (
             <Card
               key={calc.calculationId}
               className="hover:shadow-md transition-shadow"
@@ -120,7 +168,7 @@ export default function History() {
                         )
                       : "—"}
                   </p>
-                  <div className="flex gap-4 mt-2 text-sm">
+                  <div className="flex flex-wrap gap-4 mt-2 text-sm">
                     <span>
                       <span className="text-gray-500">Max Flow:</span>{" "}
                       <span className="font-medium text-primary-600">
@@ -129,7 +177,9 @@ export default function History() {
                     </span>
                     <span>
                       <span className="text-gray-500">Cost:</span>{" "}
-                      <span className="font-medium">{calc.totalCost}</span>
+                      <span className="font-medium">
+                        ₽{calc.totalCost?.toFixed(2) ?? 0}
+                      </span>
                     </span>
                     <span>
                       <span className="text-gray-500">Узлов:</span>{" "}
@@ -141,7 +191,7 @@ export default function History() {
                     </span>
                     <span>
                       <span className="text-gray-500">Время:</span>{" "}
-                      {calc.computationTimeMs.toFixed(1)} мс
+                      {calc.computationTimeMs?.toFixed(1) ?? 0} мс
                     </span>
                   </div>
                   {calc.tags && calc.tags.length > 0 && (
@@ -159,6 +209,7 @@ export default function History() {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleViewDetails(calc)}
+                    title="Подробнее"
                   >
                     <EyeIcon className="w-4 h-4" />
                   </Button>
@@ -167,6 +218,7 @@ export default function History() {
                     size="sm"
                     onClick={() => deleteMutation.mutate(calc.calculationId)}
                     loading={deleteMutation.isPending}
+                    title="Удалить"
                   >
                     <TrashIcon className="w-4 h-4 text-red-500" />
                   </Button>
@@ -188,6 +240,12 @@ export default function History() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <p className="text-sm text-gray-500">ID</p>
+                <p className="font-mono text-sm">
+                  {selectedCalc.calculationId}
+                </p>
+              </div>
+              <div>
                 <p className="text-sm text-gray-500">Алгоритм</p>
                 <p className="font-medium">
                   {ALGORITHM_NAMES[selectedCalc.algorithm]}
@@ -204,25 +262,33 @@ export default function History() {
                 </p>
               </div>
               <div>
+                <p className="text-sm text-gray-500">Время вычисления</p>
+                <p className="font-medium">
+                  {selectedCalc.computationTimeMs?.toFixed(2) ?? 0} мс
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div>
                 <p className="text-sm text-gray-500">Максимальный поток</p>
-                <p className="font-medium text-primary-600 text-xl">
+                <p className="font-bold text-primary-600 text-2xl">
                   {selectedCalc.maxFlow}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Общая стоимость</p>
-                <p className="font-medium text-xl">{selectedCalc.totalCost}</p>
+                <p className="font-bold text-2xl">
+                  ₽{selectedCalc.totalCost?.toFixed(2) ?? 0}
+                </p>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500">Размер графа</p>
                 <p className="font-medium">
                   {selectedCalc.nodeCount} узлов, {selectedCalc.edgeCount} рёбер
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Время вычисления</p>
-                <p className="font-medium">
-                  {selectedCalc.computationTimeMs.toFixed(2)} мс
                 </p>
               </div>
             </div>
@@ -231,6 +297,7 @@ export default function History() {
               <Button
                 onClick={() => handleLoadGraph(selectedCalc.calculationId)}
                 loading={loadMutation.isPending}
+                className="flex-1"
               >
                 Загрузить в редактор
               </Button>

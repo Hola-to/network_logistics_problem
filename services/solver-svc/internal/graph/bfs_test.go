@@ -2,6 +2,8 @@ package graph
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBFS_SimpleGraph(t *testing.T) {
@@ -13,24 +15,14 @@ func TestBFS_SimpleGraph(t *testing.T) {
 
 	result := BFS(rg, 1, 4)
 
-	if !result.Found {
-		t.Error("Path should be found")
-	}
-
-	if !result.Visited[1] || !result.Visited[2] || !result.Visited[3] || !result.Visited[4] {
-		t.Error("All nodes should be visited")
-	}
-
-	// Check parent chain
-	if result.Parent[4] != 3 {
-		t.Errorf("Parent of 4 = %d, want 3", result.Parent[4])
-	}
-	if result.Parent[3] != 2 {
-		t.Errorf("Parent of 3 = %d, want 2", result.Parent[3])
-	}
-	if result.Parent[2] != 1 {
-		t.Errorf("Parent of 2 = %d, want 1", result.Parent[2])
-	}
+	assert.True(t, result.Found)
+	assert.True(t, result.Visited[1])
+	assert.True(t, result.Visited[2])
+	assert.True(t, result.Visited[3])
+	assert.True(t, result.Visited[4])
+	assert.Equal(t, int64(3), result.Parent[4])
+	assert.Equal(t, int64(2), result.Parent[3])
+	assert.Equal(t, int64(1), result.Parent[2])
 }
 
 func TestBFS_NoPath(t *testing.T) {
@@ -41,17 +33,11 @@ func TestBFS_NoPath(t *testing.T) {
 
 	result := BFS(rg, 1, 4)
 
-	if result.Found {
-		t.Error("Path should not be found")
-	}
-
-	if !result.Visited[1] || !result.Visited[2] {
-		t.Error("Reachable nodes should be visited")
-	}
-
-	if result.Visited[3] || result.Visited[4] {
-		t.Error("Unreachable nodes should not be visited")
-	}
+	assert.False(t, result.Found)
+	assert.True(t, result.Visited[1])
+	assert.True(t, result.Visited[2])
+	assert.False(t, result.Visited[3])
+	assert.False(t, result.Visited[4])
 }
 
 func TestBFS_ZeroCapacityEdge(t *testing.T) {
@@ -62,9 +48,7 @@ func TestBFS_ZeroCapacityEdge(t *testing.T) {
 
 	result := BFS(rg, 1, 4)
 
-	if result.Found {
-		t.Error("Path should not be found (zero capacity edge)")
-	}
+	assert.False(t, result.Found)
 }
 
 func TestBFS_SaturatedPath(t *testing.T) {
@@ -77,9 +61,7 @@ func TestBFS_SaturatedPath(t *testing.T) {
 
 	result := BFS(rg, 1, 3)
 
-	if result.Found {
-		t.Error("Path should not be found (saturated edge)")
-	}
+	assert.False(t, result.Found)
 }
 
 func TestBFS_MultiplePathsFindsAny(t *testing.T) {
@@ -93,15 +75,9 @@ func TestBFS_MultiplePathsFindsAny(t *testing.T) {
 
 	result := BFS(rg, 1, 4)
 
-	if !result.Found {
-		t.Error("Path should be found")
-	}
-
-	// Parent of 4 should be 2 or 3 (BFS finds shortest)
+	assert.True(t, result.Found)
 	parent4 := result.Parent[4]
-	if parent4 != 2 && parent4 != 3 {
-		t.Errorf("Parent of 4 should be 2 or 3, got %d", parent4)
-	}
+	assert.True(t, parent4 == 2 || parent4 == 3)
 }
 
 func TestBFS_SourceEqualsSink(t *testing.T) {
@@ -111,14 +87,10 @@ func TestBFS_SourceEqualsSink(t *testing.T) {
 
 	result := BFS(rg, 1, 1)
 
-	// Source == sink, technically found immediately but depends on implementation
+	// Source == sink is found immediately but no path needed
 	if result.Found {
-		// OK: found immediately
-		if result.Parent[1] != -1 {
-			t.Errorf("Parent of source should be -1, got %d", result.Parent[1])
-		}
+		assert.Equal(t, int64(-1), result.Parent[1])
 	}
-	// If not found, also OK as BFS doesn't check source==sink immediately
 }
 
 func TestBFS_LargeGraph(t *testing.T) {
@@ -134,9 +106,7 @@ func TestBFS_LargeGraph(t *testing.T) {
 
 	result := BFS(rg, 0, 999)
 
-	if !result.Found {
-		t.Error("Path should be found in linear graph")
-	}
+	assert.True(t, result.Found)
 
 	// Verify path length
 	pathLen := 0
@@ -150,9 +120,7 @@ func TestBFS_LargeGraph(t *testing.T) {
 		pathLen++
 	}
 
-	if pathLen != 999 {
-		t.Errorf("Path length = %d, want 999", pathLen)
-	}
+	assert.Equal(t, 999, pathLen)
 }
 
 func TestBFSLevel_SimpleGraph(t *testing.T) {
@@ -174,11 +142,9 @@ func TestBFSLevel_SimpleGraph(t *testing.T) {
 	}
 
 	for node, wantLevel := range expected {
-		if gotLevel, exists := levels[node]; !exists {
-			t.Errorf("Node %d not in levels", node)
-		} else if gotLevel != wantLevel {
-			t.Errorf("Level of node %d = %d, want %d", node, gotLevel, wantLevel)
-		}
+		gotLevel, exists := levels[node]
+		assert.True(t, exists, "Node %d not in levels", node)
+		assert.Equal(t, wantLevel, gotLevel, "Level of node %d", node)
 	}
 }
 
@@ -189,9 +155,8 @@ func TestBFSLevel_Disconnected(t *testing.T) {
 
 	levels := BFSLevel(rg, 1)
 
-	if _, exists := levels[3]; exists {
-		t.Error("Disconnected node should not have level")
-	}
+	_, exists := levels[3]
+	assert.False(t, exists)
 }
 
 func TestBFSLevel_ZeroCapacity(t *testing.T) {
@@ -202,12 +167,10 @@ func TestBFSLevel_ZeroCapacity(t *testing.T) {
 
 	levels := BFSLevel(rg, 1)
 
-	if _, exists := levels[3]; exists {
-		t.Error("Node behind zero capacity edge should not have level")
-	}
-	if _, exists := levels[4]; exists {
-		t.Error("Node behind zero capacity edge should not have level")
-	}
+	_, exists3 := levels[3]
+	_, exists4 := levels[4]
+	assert.False(t, exists3)
+	assert.False(t, exists4)
 }
 
 func TestBFSLevel_SingleNode(t *testing.T) {
@@ -216,12 +179,8 @@ func TestBFSLevel_SingleNode(t *testing.T) {
 
 	levels := BFSLevel(rg, 1)
 
-	if levels[1] != 0 {
-		t.Errorf("Source level = %d, want 0", levels[1])
-	}
-	if len(levels) != 1 {
-		t.Errorf("Levels count = %d, want 1", len(levels))
-	}
+	assert.Equal(t, 0, levels[1])
+	assert.Len(t, levels, 1)
 }
 
 func TestBFSLevel_Cycle(t *testing.T) {
@@ -233,15 +192,9 @@ func TestBFSLevel_Cycle(t *testing.T) {
 
 	levels := BFSLevel(rg, 1)
 
-	if levels[1] != 0 {
-		t.Errorf("Level of 1 = %d, want 0", levels[1])
-	}
-	if levels[2] != 1 {
-		t.Errorf("Level of 2 = %d, want 1", levels[2])
-	}
-	if levels[3] != 2 {
-		t.Errorf("Level of 3 = %d, want 2", levels[3])
-	}
+	assert.Equal(t, 0, levels[1])
+	assert.Equal(t, 1, levels[2])
+	assert.Equal(t, 2, levels[3])
 }
 
 func TestBFS_EmptyGraph(t *testing.T) {
@@ -252,9 +205,7 @@ func TestBFS_EmptyGraph(t *testing.T) {
 
 	result := BFS(rg, 1, 2)
 
-	if result.Found {
-		t.Error("Path should not be found in graph without edges")
-	}
+	assert.False(t, result.Found)
 }
 
 func TestBFSLevel_EmptyGraph(t *testing.T) {
@@ -262,8 +213,154 @@ func TestBFSLevel_EmptyGraph(t *testing.T) {
 
 	levels := BFSLevel(rg, 1)
 
-	// Source not in graph, but it should still get level 0
-	if levels[1] != 0 {
-		t.Errorf("Source level should be 0, got %d", levels[1])
+	assert.Equal(t, 0, levels[1])
+}
+
+func TestBFSDeterministic(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddEdgeWithReverse(1, 3, 10, 0)
+	rg.AddEdgeWithReverse(2, 4, 10, 0)
+	rg.AddEdgeWithReverse(3, 4, 10, 0)
+
+	// Run multiple times to verify determinism
+	for i := 0; i < 10; i++ {
+		result := BFSDeterministic(rg, 1, 4)
+		assert.True(t, result.Found)
+		// Parent of 4 should be consistent
 	}
+}
+
+func TestBFSWithCallback(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdge(1, 2, 10, 0)
+	rg.AddEdge(2, 3, 10, 0)
+	rg.AddEdge(3, 4, 10, 0)
+	rg.AddEdge(4, 5, 10, 0)
+
+	visited := make([]int64, 0)
+	maxLevel := 0
+
+	BFSWithCallback(rg, 1, func(node int64, level int) bool {
+		visited = append(visited, node)
+		if level > maxLevel {
+			maxLevel = level
+		}
+		// Stop at level 2
+		return level < 2
+	})
+
+	assert.Contains(t, visited, int64(1))
+	assert.Contains(t, visited, int64(2))
+	assert.Contains(t, visited, int64(3))
+	// Should stop before visiting nodes at level 3+
+}
+
+func TestBFSWithCallback_EarlyTermination(t *testing.T) {
+	rg := NewResidualGraph()
+	for i := int64(1); i < 100; i++ {
+		rg.AddEdge(i, i+1, 10, 0)
+	}
+
+	count := 0
+	BFSWithCallback(rg, 1, func(node int64, level int) bool {
+		count++
+		return count < 5 // Stop after 5 nodes
+	})
+
+	assert.Equal(t, 5, count)
+}
+
+func TestBFSReverse(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddEdgeWithReverse(2, 3, 10, 0)
+	rg.AddEdgeWithReverse(3, 4, 10, 0)
+
+	heights := BFSReverse(rg, 4)
+
+	assert.Equal(t, 0, heights[4])
+	assert.Equal(t, 1, heights[3])
+	assert.Equal(t, 2, heights[2])
+	assert.Equal(t, 3, heights[1])
+}
+
+func TestBFSReverse_Disconnected(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 0)
+	rg.AddNode(3)
+	rg.AddNode(4)
+	// 3 and 4 not connected to 2
+
+	heights := BFSReverse(rg, 2)
+
+	_, exists3 := heights[3]
+	_, exists4 := heights[4]
+	assert.False(t, exists3)
+	assert.False(t, exists4)
+}
+
+func TestBFSAllPaths(t *testing.T) {
+	rg := NewResidualGraph()
+	// Diamond: 1 -> 2 -> 4
+	//          1 -> 3 -> 4
+	rg.AddEdge(1, 2, 10, 0)
+	rg.AddEdge(1, 3, 10, 0)
+	rg.AddEdge(2, 4, 10, 0)
+	rg.AddEdge(3, 4, 10, 0)
+
+	paths := BFSAllPaths(rg, 1, 4, 10)
+
+	assert.Len(t, paths, 2)
+
+	// Both paths should have length 3 (1, intermediate, 4)
+	for _, path := range paths {
+		assert.Len(t, path, 3)
+		assert.Equal(t, int64(1), path[0])
+		assert.Equal(t, int64(4), path[2])
+	}
+}
+
+func TestBFSAllPaths_MaxLimit(t *testing.T) {
+	rg := NewResidualGraph()
+	// Many parallel paths
+	for i := int64(2); i <= 10; i++ {
+		rg.AddEdge(1, i, 10, 0)
+		rg.AddEdge(i, 100, 10, 0)
+	}
+
+	paths := BFSAllPaths(rg, 1, 100, 3)
+
+	assert.Len(t, paths, 3) // Limited to 3
+}
+
+func TestBFSAllPaths_NoPath(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdge(1, 2, 10, 0)
+	rg.AddNode(3)
+
+	paths := BFSAllPaths(rg, 1, 3, 10)
+
+	assert.Nil(t, paths)
+}
+
+func TestQueue(t *testing.T) {
+	q := NewQueue(10)
+
+	assert.True(t, q.Empty())
+	assert.Equal(t, 0, q.Len())
+
+	q.Push(1)
+	q.Push(2)
+	q.Push(3)
+
+	assert.False(t, q.Empty())
+	assert.Equal(t, 3, q.Len())
+
+	assert.Equal(t, int64(1), q.Pop())
+	assert.Equal(t, int64(2), q.Pop())
+	assert.Equal(t, 1, q.Len())
+
+	q.Reset()
+	assert.True(t, q.Empty())
 }

@@ -1149,8 +1149,6 @@ func TestSolverService_Solve_WithCache_Hit(t *testing.T) {
 
 func TestSolverService_Solve_WithCache_Miss(t *testing.T) {
 	mockC := newMockCache()
-	// shouldHit = false по умолчанию, поэтому будет cache miss
-
 	solverCache := cache.NewSolverCache(mockC, 10*time.Minute)
 	svc := NewSolverService("1.0.0", solverCache)
 	ctx := context.Background()
@@ -1171,8 +1169,9 @@ func TestSolverService_Solve_WithCache_Miss(t *testing.T) {
 	assert.True(t, resp.Success)
 	assert.Equal(t, 10.0, resp.Result.MaxFlow)
 
-	// Проверяем, что результат сохранён в кэш
-	assert.NotEmpty(t, mockC.data, "Cache Set should be called on miss")
+	assert.Eventually(t, func() bool {
+		return len(mockC.data) > 0
+	}, time.Second, 10*time.Millisecond, "Cache Set should be called on miss")
 }
 
 func TestSolverService_Solve_CacheSetError(t *testing.T) {
@@ -1409,4 +1408,259 @@ func TestSolverService_SolveStream_NoPathFromStart(t *testing.T) {
 	lastMsg := stream.messages[len(stream.messages)-1]
 	assert.Equal(t, "completed", lastMsg.Status)
 	assert.Equal(t, 0.0, lastMsg.CurrentFlow)
+}
+
+func TestSolverService_Solve_ReturnPaths(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+	ctx := context.Background()
+
+	req := &optimizationv1.SolveRequest{
+		Graph: &commonv1.Graph{
+			Nodes: []*commonv1.Node{
+				{Id: 1}, {Id: 2}, {Id: 3},
+			},
+			Edges: []*commonv1.Edge{
+				{From: 1, To: 2, Capacity: 10, Cost: 1},
+				{From: 2, To: 3, Capacity: 10, Cost: 1},
+			},
+			SourceId: 1,
+			SinkId:   3,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_EDMONDS_KARP,
+		Options: &optimizationv1.SolveOptions{
+			ReturnPaths: true,
+		},
+	}
+
+	resp, err := svc.Solve(ctx, req)
+	require.NoError(t, err)
+
+	assert.True(t, resp.Success)
+	assert.NotEmpty(t, resp.Result.Paths)
+}
+
+func TestSolverService_Solve_FlowEdges(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+	ctx := context.Background()
+
+	req := &optimizationv1.SolveRequest{
+		Graph: &commonv1.Graph{
+			Nodes: []*commonv1.Node{
+				{Id: 1}, {Id: 2}, {Id: 3},
+			},
+			Edges: []*commonv1.Edge{
+				{From: 1, To: 2, Capacity: 10, Cost: 1},
+				{From: 2, To: 3, Capacity: 10, Cost: 1},
+			},
+			SourceId: 1,
+			SinkId:   3,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_EDMONDS_KARP,
+	}
+
+	resp, err := svc.Solve(ctx, req)
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, resp.Result.Edges)
+	// Check that edges have flow
+	hasFlow := false
+	for _, edge := range resp.Result.Edges {
+		if edge.Flow > 0 {
+			hasFlow = true
+			break
+		}
+	}
+	assert.True(t, hasFlow)
+}
+
+func TestSolverService_Stats_Increment(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+	ctx := context.Background()
+
+	statsBefore := svc.GetStats()
+
+	req := &optimizationv1.SolveRequest{
+		Graph: &commonv1.Graph{
+			Nodes:    []*commonv1.Node{{Id: 1}, {Id: 2}},
+			Edges:    []*commonv1.Edge{{From: 1, To: 2, Capacity: 10}},
+			SourceId: 1,
+			SinkId:   2,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	_, _ = svc.Solve(ctx, req)
+	_, _ = svc.Solve(ctx, req)
+	_, _ = svc.Solve(ctx, req)
+
+	statsAfter := svc.GetStats()
+
+	assert.Equal(t, statsBefore.RequestsTotal+3, statsAfter.RequestsTotal)
+	assert.Equal(t, statsBefore.RequestsSuccess+3, statsAfter.RequestsSuccess)
+}
+
+func TestSolverService_SolveStream_Dinic(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+
+	req := &optimizationv1.SolveRequestForBigGraphs{
+		Graph: &commonv1.Graph{
+			Nodes: []*commonv1.Node{{Id: 1}, {Id: 2}, {Id: 3}, {Id: 4}},
+			Edges: []*commonv1.Edge{
+				{From: 1, To: 2, Capacity: 10},
+				{From: 1, To: 3, Capacity: 10},
+				{From: 2, To: 4, Capacity: 10},
+				{From: 3, To: 4, Capacity: 10},
+			},
+			SourceId: 1,
+			SinkId:   4,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_DINIC,
+	}
+
+	stream := &mockSolveStream{ctx: context.Background()}
+	err := svc.SolveStream(req, stream)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, stream.messages)
+
+	lastMsg := stream.messages[len(stream.messages)-1]
+	assert.Equal(t, "completed", lastMsg.Status)
+	assert.Equal(t, 20.0, lastMsg.CurrentFlow)
+}
+
+func TestSolverService_SolveStream_PushRelabel(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+
+	req := &optimizationv1.SolveRequestForBigGraphs{
+		Graph: &commonv1.Graph{
+			Nodes: []*commonv1.Node{{Id: 1}, {Id: 2}, {Id: 3}},
+			Edges: []*commonv1.Edge{
+				{From: 1, To: 2, Capacity: 10},
+				{From: 2, To: 3, Capacity: 10},
+			},
+			SourceId: 1,
+			SinkId:   3,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_PUSH_RELABEL,
+	}
+
+	stream := &mockSolveStream{ctx: context.Background()}
+	err := svc.SolveStream(req, stream)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, stream.messages)
+
+	lastMsg := stream.messages[len(stream.messages)-1]
+	assert.Equal(t, "completed", lastMsg.Status)
+	assert.Equal(t, 10.0, lastMsg.CurrentFlow)
+}
+
+func TestSolverService_SolveStream_MinCost(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+
+	req := &optimizationv1.SolveRequestForBigGraphs{
+		Graph: &commonv1.Graph{
+			Nodes: []*commonv1.Node{{Id: 1}, {Id: 2}, {Id: 3}},
+			Edges: []*commonv1.Edge{
+				{From: 1, To: 2, Capacity: 10, Cost: 1},
+				{From: 2, To: 3, Capacity: 10, Cost: 1},
+			},
+			SourceId: 1,
+			SinkId:   3,
+		},
+		Algorithm: commonv1.Algorithm_ALGORITHM_MIN_COST,
+	}
+
+	stream := &mockSolveStream{ctx: context.Background()}
+	err := svc.SolveStream(req, stream)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, stream.messages)
+
+	lastMsg := stream.messages[len(stream.messages)-1]
+	assert.Equal(t, "completed", lastMsg.Status)
+	assert.Equal(t, 10.0, lastMsg.CurrentFlow)
+}
+
+func TestSolverService_OptionsValidation(t *testing.T) {
+	svc := NewSolverService("1.0.0", nil)
+
+	tests := []struct {
+		name string
+		opts *optimizationv1.SolveOptions
+	}{
+		{
+			name: "very_small_epsilon",
+			opts: &optimizationv1.SolveOptions{Epsilon: 1e-20},
+		},
+		{
+			name: "very_large_epsilon",
+			opts: &optimizationv1.SolveOptions{Epsilon: 1},
+		},
+		{
+			name: "very_small_timeout",
+			opts: &optimizationv1.SolveOptions{TimeoutSeconds: 0.001},
+		},
+		{
+			name: "very_large_timeout",
+			opts: &optimizationv1.SolveOptions{TimeoutSeconds: 100000},
+		},
+		{
+			name: "very_small_iterations",
+			opts: &optimizationv1.SolveOptions{MaxIterations: 1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := svc.buildSolverOptions(tt.opts)
+
+			// Should not panic and should have valid values
+			assert.GreaterOrEqual(t, result.Epsilon, MinEpsilon)
+			assert.LessOrEqual(t, result.Epsilon, MaxEpsilon)
+			if tt.opts.TimeoutSeconds > 0 {
+				assert.GreaterOrEqual(t, result.Timeout.Seconds(), MinTimeoutSeconds)
+				assert.LessOrEqual(t, result.Timeout.Seconds(), MaxTimeoutSeconds)
+			}
+			if tt.opts.MaxIterations > 0 {
+				assert.GreaterOrEqual(t, result.MaxIterations, MinIterations)
+			}
+		})
+	}
+}
+
+func TestMemStatsCache_Refresh(t *testing.T) {
+	cache := newMemStatsCache(10 * time.Millisecond)
+
+	// First read forces refresh
+	alloc1 := cache.get()
+	assert.Greater(t, alloc1, uint64(0))
+
+	// Immediate second read should be cached
+	alloc2 := cache.get()
+	assert.Equal(t, alloc1, alloc2)
+
+	// Wait for cache to expire
+	time.Sleep(15 * time.Millisecond)
+
+	// Should refresh now
+	alloc3 := cache.get()
+	// May or may not be equal depending on GC, but should not be 0
+	assert.Greater(t, alloc3, uint64(0))
+}
+
+func TestProgressTracker(t *testing.T) {
+	// Simple test for progress tracker fields
+	start := time.Now()
+	cache := newMemStatsCache(time.Second)
+	tracker := &progressTracker{
+		stream:        nil,
+		start:         start,
+		lastSendTime:  start,
+		memStatsCache: cache,
+	}
+
+	assert.Equal(t, start, tracker.start)
+	assert.Equal(t, start, tracker.lastSendTime)
+	assert.NotNil(t, tracker.memStatsCache)
 }

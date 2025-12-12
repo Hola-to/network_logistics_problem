@@ -17,6 +17,7 @@ import Simulation from "@/pages/app/Simulation";
 import Analytics from "@/pages/app/Analytics";
 import History from "@/pages/app/History";
 import Reports from "@/pages/app/Reports";
+import Algorithms from "@/pages/app/Algorithms";
 
 // Admin pages
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/network" element={<NetworkEditor />} />
+        <Route path="/algorithms" element={<Algorithms />} />
         <Route path="/simulation" element={<Simulation />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/history" element={<History />} />

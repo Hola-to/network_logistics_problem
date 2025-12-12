@@ -12,6 +12,7 @@ import {
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
+  AcademicCapIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "@/hooks/useAuth";
 import clsx from "clsx";
@@ -19,6 +20,7 @@ import clsx from "clsx";
 const navigation = [
   { name: "Дашборд", href: "/dashboard", icon: HomeIcon },
   { name: "Редактор сети", href: "/network", icon: MapIcon },
+  { name: "Алгоритмы", href: "/algorithms", icon: AcademicCapIcon },
   { name: "Симуляция", href: "/simulation", icon: PlayIcon },
   { name: "Аналитика", href: "/analytics", icon: ChartBarIcon },
   { name: "История", href: "/history", icon: ClockIcon },

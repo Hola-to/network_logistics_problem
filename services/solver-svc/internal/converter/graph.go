@@ -1,21 +1,76 @@
+// Package converter provides utilities for converting between protobuf graph
+// representations and the internal residual graph structures used by flow algorithms.
+//
+// The package handles:
+//   - Converting proto Graph messages to ResidualGraph for algorithm execution
+//   - Converting algorithm results back to proto format for API responses
+//   - Computing graph statistics and metrics
+//   - Filtering and selecting edges based on various criteria
+//
+// Thread Safety:
+// All functions in this package are stateless and thread-safe. The returned
+// slices and maps are newly allocated and safe to modify.
+//
+// Determinism:
+// All functions that iterate over graph structures use sorted node orderings
+// to ensure deterministic output regardless of map iteration order.
 package converter
 
 import (
+	"sort"
+
 	commonv1 "logistics/gen/go/logistics/common/v1"
 	"logistics/services/solver-svc/internal/graph"
 )
 
-// ToResidualGraph конвертирует proto Graph в ResidualGraph
+// PathWithFlow represents an augmenting path with its associated flow value.
+// Used to track individual paths found during flow algorithm execution.
+type PathWithFlow struct {
+	// NodeIDs contains the sequence of node IDs from source to sink.
+	// The path is valid if len(NodeIDs) >= 2 (at least source and sink).
+	NodeIDs []int64
+
+	// Flow is the amount of flow pushed along this path.
+	// Always positive for valid paths.
+	Flow float64
+}
+
+// =============================================================================
+// Proto to Internal Conversion
+// =============================================================================
+
+// ToResidualGraph converts a protobuf Graph message to an internal ResidualGraph
+// structure suitable for flow algorithm execution.
+//
+// The conversion process:
+//  1. Creates a new ResidualGraph
+//  2. Adds all nodes from the proto graph
+//  3. Adds edges with their reverse edges for residual capacity tracking
+//  4. Handles bidirectional edges by adding both directions
+//
+// Parameters:
+//   - protoGraph: The protobuf Graph message to convert
+//
+// Returns:
+//   - A new ResidualGraph ready for algorithm execution
+//
+// Example:
+//
+//	rg := ToResidualGraph(request.Graph)
+//	result := algorithms.Dinic(rg, sourceID, sinkID, nil)
 func ToResidualGraph(protoGraph *commonv1.Graph) *graph.ResidualGraph {
 	rg := graph.NewResidualGraph()
 
+	// Add all nodes first
 	for _, node := range protoGraph.Nodes {
 		rg.AddNode(node.Id)
 	}
 
+	// Add edges with reverse edges for residual graph structure
 	for _, edge := range protoGraph.Edges {
 		rg.AddEdgeWithReverse(edge.From, edge.To, edge.Capacity, edge.Cost)
 
+		// For bidirectional edges, add the reverse direction as well
 		if edge.Bidirectional {
 			rg.AddEdgeWithReverse(edge.To, edge.From, edge.Capacity, edge.Cost)
 		}
@@ -24,13 +79,284 @@ func ToResidualGraph(protoGraph *commonv1.Graph) *graph.ResidualGraph {
 	return rg
 }
 
-// ToFlowEdges конвертирует результат в proto FlowEdge
+// =============================================================================
+// Path Conversion
+// =============================================================================
+
+// ToPaths converts internal PathWithFlow slices to protobuf Path messages.
+// Each path includes the flow amount and computed cost.
+//
+// The cost for each path is computed as: sum of edge costs * path flow.
+//
+// Parameters:
+//   - paths: Slice of internal path representations
+//   - rg: The residual graph (used to look up edge costs)
+//
+// Returns:
+//   - Slice of protobuf Path messages
+//
+// Note: Paths with fewer than 2 nodes are filtered out as invalid.
+func ToPaths(paths []PathWithFlow, rg *graph.ResidualGraph) []*commonv1.Path {
+	result := make([]*commonv1.Path, 0, len(paths))
+
+	for _, p := range paths {
+		// Valid paths must have at least source and sink
+		if len(p.NodeIDs) < 2 {
+			continue
+		}
+
+		// Compute total edge cost for the path
+		unitCost := calculatePathCost(rg, p.NodeIDs)
+
+		result = append(result, &commonv1.Path{
+			NodeIds: p.NodeIDs,
+			Flow:    p.Flow,
+			Cost:    unitCost * p.Flow, // Total cost = unit cost * flow
+		})
+	}
+
+	return result
+}
+
+// ToPathsFromNodeIDs converts raw node ID sequences to protobuf Paths.
+// Flow is computed as the minimum residual capacity along each path.
+//
+// This is useful when you have path sequences but haven't tracked flow values.
+//
+// Parameters:
+//   - paths: Slice of node ID sequences
+//   - rg: The residual graph
+//
+// Returns:
+//   - Slice of protobuf Path messages with computed flows
+func ToPathsFromNodeIDs(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Path {
+	result := make([]*commonv1.Path, 0, len(paths))
+
+	for _, nodeIDs := range paths {
+		if len(nodeIDs) < 2 {
+			continue
+		}
+
+		// Flow is the bottleneck capacity
+		flow := graph.FindMinCapacityOnPath(rg, nodeIDs)
+		unitCost := calculatePathCost(rg, nodeIDs)
+
+		result = append(result, &commonv1.Path{
+			NodeIds: nodeIDs,
+			Flow:    flow,
+			Cost:    unitCost * flow,
+		})
+	}
+
+	return result
+}
+
+// ToPathsWithFlowReconstruction reconstructs path flows from edge flow values.
+// The flow for each path is the minimum edge flow along the path.
+//
+// This is useful when paths were recorded during execution but flow values
+// need to be recomputed from the final graph state.
+//
+// Parameters:
+//   - paths: Slice of node ID sequences
+//   - rg: The residual graph with flow values
+//
+// Returns:
+//   - Slice of protobuf Path messages
+func ToPathsWithFlowReconstruction(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Path {
+	result := make([]*commonv1.Path, 0, len(paths))
+
+	for _, nodeIDs := range paths {
+		if len(nodeIDs) < 2 {
+			continue
+		}
+
+		// Find minimum flow along the path
+		minFlow := graph.Infinity
+		for i := 0; i < len(nodeIDs)-1; i++ {
+			edge := rg.GetEdge(nodeIDs[i], nodeIDs[i+1])
+			if edge == nil {
+				minFlow = 0
+				break
+			}
+			if edge.Flow < minFlow {
+				minFlow = edge.Flow
+			}
+		}
+
+		// Handle edge cases
+		if minFlow >= graph.Infinity || minFlow < 0 {
+			minFlow = 0
+		}
+
+		unitCost := calculatePathCost(rg, nodeIDs)
+
+		result = append(result, &commonv1.Path{
+			NodeIds: nodeIDs,
+			Flow:    minFlow,
+			Cost:    unitCost * minFlow,
+		})
+	}
+
+	return result
+}
+
+// calculatePathCost computes the sum of edge costs along a path.
+// This is the cost per unit of flow, not the total cost.
+func calculatePathCost(rg *graph.ResidualGraph, nodeIDs []int64) float64 {
+	var totalCost float64
+
+	for i := 0; i < len(nodeIDs)-1; i++ {
+		edge := rg.GetEdge(nodeIDs[i], nodeIDs[i+1])
+		if edge != nil {
+			totalCost += edge.Cost
+		}
+	}
+
+	return totalCost
+}
+
+// =============================================================================
+// Edge Conversion
+// =============================================================================
+
+// FlowEdgeOptions configures which edges to include in conversion output.
+type FlowEdgeOptions struct {
+	// IncludeZeroFlow includes edges with no flow when true.
+	// Default: false (only edges with positive flow are included)
+	IncludeZeroFlow bool
+
+	// IncludeReverseEdge includes reverse/residual edges when true.
+	// Default: false (only forward edges are included)
+	IncludeReverseEdge bool
+
+	// MinFlowThreshold is the minimum flow value to include an edge.
+	// Edges with flow < MinFlowThreshold are excluded (unless IncludeZeroFlow).
+	// Default: graph.Epsilon
+	MinFlowThreshold float64
+}
+
+// DefaultFlowEdgeOptions returns the default options for edge conversion.
+// By default, only forward edges with positive flow are included.
+func DefaultFlowEdgeOptions() *FlowEdgeOptions {
+	return &FlowEdgeOptions{
+		IncludeZeroFlow:    false,
+		IncludeReverseEdge: false,
+		MinFlowThreshold:   graph.Epsilon,
+	}
+}
+
+// ToFlowEdges converts residual graph edges to protobuf FlowEdge messages.
+// Uses default options: only forward edges with positive flow.
+//
+// The edges are returned in deterministic order (sorted by from node, then to node).
+//
+// Parameters:
+//   - rg: The residual graph with flow values
+//
+// Returns:
+//   - Slice of protobuf FlowEdge messages
 func ToFlowEdges(rg *graph.ResidualGraph) []*commonv1.FlowEdge {
+	return ToFlowEdgesWithOptions(rg, DefaultFlowEdgeOptions())
+}
+
+// ToFlowEdgesWithOptions converts edges with custom filtering options.
+//
+// Parameters:
+//   - rg: The residual graph
+//   - opts: Options controlling which edges to include
+//
+// Returns:
+//   - Filtered slice of protobuf FlowEdge messages in deterministic order
+func ToFlowEdgesWithOptions(rg *graph.ResidualGraph, opts *FlowEdgeOptions) []*commonv1.FlowEdge {
+	if opts == nil {
+		opts = DefaultFlowEdgeOptions()
+	}
+
 	var result []*commonv1.FlowEdge
 
-	for from, edges := range rg.Edges {
+	// Iterate in deterministic order using sorted node list
+	nodes := rg.GetSortedNodes()
+	for _, from := range nodes {
+		// Use EdgesList which maintains insertion order
+		edges := rg.GetNeighborsList(from)
 		for _, edge := range edges {
-			if edge.IsReverse || edge.Flow < graph.Epsilon {
+			// Apply filters
+			if edge.IsReverse && !opts.IncludeReverseEdge {
+				continue
+			}
+
+			if edge.Flow < opts.MinFlowThreshold && !opts.IncludeZeroFlow {
+				continue
+			}
+
+			// Compute utilization ratio
+			utilization := 0.0
+			if edge.OriginalCapacity > 0 {
+				utilization = edge.Flow / edge.OriginalCapacity
+			}
+
+			result = append(result, &commonv1.FlowEdge{
+				From:        from,
+				To:          edge.To,
+				Flow:        edge.Flow,
+				Capacity:    edge.OriginalCapacity,
+				Cost:        edge.Cost,
+				Utilization: utilization,
+			})
+		}
+	}
+
+	return result
+}
+
+// ToAllEdges returns all forward edges regardless of flow.
+// Useful for visualizing the complete network structure.
+func ToAllEdges(rg *graph.ResidualGraph) []*commonv1.FlowEdge {
+	opts := &FlowEdgeOptions{
+		IncludeZeroFlow:    true,
+		IncludeReverseEdge: false,
+		MinFlowThreshold:   0,
+	}
+	return ToFlowEdgesWithOptions(rg, opts)
+}
+
+// ToDebugEdges returns all edges including reverse edges.
+// Useful for debugging residual graph structure.
+func ToDebugEdges(rg *graph.ResidualGraph) []*commonv1.FlowEdge {
+	opts := &FlowEdgeOptions{
+		IncludeZeroFlow:    true,
+		IncludeReverseEdge: true,
+		MinFlowThreshold:   0,
+	}
+	return ToFlowEdgesWithOptions(rg, opts)
+}
+
+// =============================================================================
+// Edge Filters
+// =============================================================================
+
+// EdgeFilter is a function type for custom edge filtering.
+// Returns true if the edge should be included in the output.
+type EdgeFilter func(from int64, edge *graph.ResidualEdge) bool
+
+// ToFlowEdgesFiltered converts edges using a custom filter function.
+// Edges are returned in deterministic order.
+//
+// Parameters:
+//   - rg: The residual graph
+//   - filter: Function to determine if each edge should be included
+//
+// Returns:
+//   - Filtered slice of protobuf FlowEdge messages
+func ToFlowEdgesFiltered(rg *graph.ResidualGraph, filter EdgeFilter) []*commonv1.FlowEdge {
+	var result []*commonv1.FlowEdge
+
+	nodes := rg.GetSortedNodes()
+	for _, from := range nodes {
+		edges := rg.GetNeighborsList(from)
+		for _, edge := range edges {
+			if filter != nil && !filter(from, edge) {
 				continue
 			}
 
@@ -53,43 +379,67 @@ func ToFlowEdges(rg *graph.ResidualGraph) []*commonv1.FlowEdge {
 	return result
 }
 
-// ToPaths конвертирует пути в proto Path
-func ToPaths(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Path {
-	result := make([]*commonv1.Path, 0, len(paths))
-
-	for _, path := range paths {
-		if len(path) < 2 {
-			continue
-		}
-
-		var totalCost, flow float64
-		flow = graph.Infinity
-
-		for i := 0; i < len(path)-1; i++ {
-			edge := rg.GetEdge(path[i], path[i+1])
-			if edge != nil {
-				totalCost += edge.Cost
-				if edge.Flow < flow {
-					flow = edge.Flow
-				}
-			}
-		}
-
-		if flow == graph.Infinity {
-			flow = 0
-		}
-
-		result = append(result, &commonv1.Path{
-			NodeIds: path,
-			Flow:    flow,
-			Cost:    totalCost * flow,
-		})
+// FilterActiveEdges returns a filter that selects only forward edges with positive flow.
+func FilterActiveEdges() EdgeFilter {
+	return func(from int64, edge *graph.ResidualEdge) bool {
+		return !edge.IsReverse && edge.Flow > graph.Epsilon
 	}
-
-	return result
 }
 
-// UpdateGraphWithFlow обновляет proto Graph результатами расчёта
+// FilterHighUtilization returns a filter that selects edges with utilization >= threshold.
+//
+// Parameters:
+//   - threshold: Minimum utilization ratio (0.0 to 1.0)
+//
+// Example:
+//
+//	// Get edges that are at least 80% utilized
+//	filter := FilterHighUtilization(0.8)
+//	edges := ToFlowEdgesFiltered(rg, filter)
+func FilterHighUtilization(threshold float64) EdgeFilter {
+	return func(from int64, edge *graph.ResidualEdge) bool {
+		if edge.IsReverse || edge.OriginalCapacity <= 0 {
+			return false
+		}
+		utilization := edge.Flow / edge.OriginalCapacity
+		return utilization >= threshold
+	}
+}
+
+// FilterSaturatedEdges returns a filter that selects fully saturated edges
+// (edges where flow equals capacity within epsilon tolerance).
+func FilterSaturatedEdges() EdgeFilter {
+	return FilterHighUtilization(1.0 - graph.Epsilon)
+}
+
+// FilterByNodes returns a filter that selects edges between specified nodes.
+//
+// Parameters:
+//   - nodes: Map of node IDs to include (both endpoints must be in the map)
+func FilterByNodes(nodes map[int64]bool) EdgeFilter {
+	return func(from int64, edge *graph.ResidualEdge) bool {
+		if edge.IsReverse {
+			return false
+		}
+		return nodes[from] && nodes[edge.To]
+	}
+}
+
+// =============================================================================
+// Graph Update
+// =============================================================================
+
+// UpdateGraphWithFlow creates a copy of a proto Graph with flow values
+// populated from algorithm results.
+//
+// This is useful for returning the modified graph state to clients.
+//
+// Parameters:
+//   - protoGraph: Original protobuf graph
+//   - rg: Residual graph with computed flow values
+//
+// Returns:
+//   - New protobuf Graph with CurrentFlow fields populated
 func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *commonv1.Graph {
 	result := &commonv1.Graph{
 		Nodes:    protoGraph.Nodes,
@@ -111,6 +461,7 @@ func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *c
 			Bidirectional: edge.Bidirectional,
 		}
 
+		// Populate flow from residual graph
 		if re := rg.GetEdge(edge.From, edge.To); re != nil {
 			newEdge.CurrentFlow = re.Flow
 		}
@@ -121,11 +472,28 @@ func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *c
 	return result
 }
 
-// CalculateGraphStatistics вычисляет статистику графа
+// =============================================================================
+// Statistics
+// =============================================================================
+
+// CalculateGraphStatistics computes various metrics about the graph structure.
+//
+// Computed metrics include:
+//   - Node and edge counts
+//   - Warehouse and delivery point counts (by node type)
+//   - Total and average capacity/length
+//   - Graph density
+//
+// Parameters:
+//   - protoGraph: The protobuf graph to analyze
+//
+// Returns:
+//   - GraphStatistics message with computed metrics
 func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatistics {
 	var warehouseCount, deliveryPointCount int64
 	var totalCapacity, totalLength float64
 
+	// Count node types
 	for _, node := range protoGraph.Nodes {
 		switch node.Type {
 		case commonv1.NodeType_NODE_TYPE_WAREHOUSE:
@@ -135,6 +503,7 @@ func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatist
 		}
 	}
 
+	// Sum edge metrics
 	for _, edge := range protoGraph.Edges {
 		totalCapacity += edge.Capacity
 		totalLength += edge.Length
@@ -143,11 +512,14 @@ func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatist
 	nodeCount := int64(len(protoGraph.Nodes))
 	edgeCount := int64(len(protoGraph.Edges))
 
+	// Compute averages
 	avgLength := 0.0
 	if edgeCount > 0 {
 		avgLength = totalLength / float64(edgeCount)
 	}
 
+	// Compute density: actual edges / max possible edges
+	// For directed graph: max edges = n * (n-1)
 	density := 0.0
 	if nodeCount > 1 {
 		maxEdges := nodeCount * (nodeCount - 1)
@@ -161,7 +533,22 @@ func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatist
 		DeliveryPointCount: deliveryPointCount,
 		TotalCapacity:      totalCapacity,
 		AverageEdgeLength:  avgLength,
-		IsConnected:        true,
+		IsConnected:        true, // TODO: implement actual connectivity check
 		Density:            density,
 	}
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+// GetSortedNodeIDs extracts and sorts node IDs from a boolean map.
+// Useful for deterministic iteration over node sets.
+func GetSortedNodeIDs(nodes map[int64]bool) []int64 {
+	result := make([]int64, 0, len(nodes))
+	for id := range nodes {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }

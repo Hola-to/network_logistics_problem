@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useCallback, useMemo } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
   PlayIcon,
@@ -9,13 +9,18 @@ import {
   Cog6ToothIcon,
   PlusIcon,
   ArrowPathIcon,
+  CheckCircleIcon,
+  BookmarkIcon,
+  InformationCircleIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
+import { Link } from "react-router-dom";
 import GraphCanvas from "@/components/visual/GraphCanvas";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import Select from "@/components/ui/Select";
 import Modal from "@/components/ui/Modal";
+import Badge from "@/components/ui/Badge";
 import { useGraphStore } from "@/stores/graphStore";
 import { solverService, historyService } from "@/api/services";
 import { NodeType, Algorithm } from "@gen/logistics/common/v1/common_pb";
@@ -26,7 +31,7 @@ import type {
 } from "@gen/logistics/gateway/v1/gateway_pb";
 
 // ============================================================================
-// Конфигурация типов узлов
+// Конфигурация
 // ============================================================================
 
 const NODE_TYPES_CONFIG = [
@@ -36,6 +41,7 @@ const NODE_TYPES_CONFIG = [
     icon: "🟢",
     color: "bg-green-500",
     description: "Начальная точка потока",
+    unique: true,
   },
   {
     type: NodeType.SINK,
@@ -43,6 +49,7 @@ const NODE_TYPES_CONFIG = [
     icon: "🔴",
     color: "bg-red-500",
     description: "Конечная точка потока",
+    unique: true,
   },
   {
     type: NodeType.WAREHOUSE,
@@ -50,6 +57,7 @@ const NODE_TYPES_CONFIG = [
     icon: "📦",
     color: "bg-blue-500",
     description: "Промежуточное хранилище",
+    unique: false,
   },
   {
     type: NodeType.DELIVERY_POINT,
@@ -57,23 +65,64 @@ const NODE_TYPES_CONFIG = [
     icon: "📍",
     color: "bg-orange-500",
     description: "Пункт назначения",
+    unique: false,
   },
   {
     type: NodeType.INTERSECTION,
-    label: "Перекрёсток",
+    label: "Узел",
     icon: "⚫",
     color: "bg-gray-500",
     description: "Транзитная точка",
+    unique: false,
   },
 ];
 
 const ALGORITHMS = [
-  { value: Algorithm.DINIC, label: "Dinic (рекомендуется)" },
-  { value: Algorithm.EDMONDS_KARP, label: "Edmonds-Karp" },
-  { value: Algorithm.PUSH_RELABEL, label: "Push-Relabel" },
-  { value: Algorithm.MIN_COST, label: "Min-Cost Flow" },
-  { value: Algorithm.FORD_FULKERSON, label: "Ford-Fulkerson" },
+  {
+    value: Algorithm.DINIC,
+    label: "Dinic",
+    description: "Рекомендуется для большинства задач",
+    supportsCost: false,
+  },
+  {
+    value: Algorithm.EDMONDS_KARP,
+    label: "Edmonds-Karp",
+    description: "Классический BFS-алгоритм",
+    supportsCost: false,
+  },
+  {
+    value: Algorithm.PUSH_RELABEL,
+    label: "Push-Relabel",
+    description: "Для очень плотных графов",
+    supportsCost: false,
+  },
+  {
+    value: Algorithm.MIN_COST,
+    label: "Min-Cost Flow",
+    description: "Минимизация стоимости доставки",
+    supportsCost: true,
+  },
+  {
+    value: Algorithm.FORD_FULKERSON,
+    label: "Ford-Fulkerson",
+    description: "Классический алгоритм (обучение)",
+    supportsCost: false,
+  },
 ];
+
+// ============================================================================
+// Хук для определения поддержки стоимости
+// ============================================================================
+
+function useAlgorithmSupport(algorithm: Algorithm) {
+  return useMemo(() => {
+    const algoConfig = ALGORITHMS.find((a) => a.value === algorithm);
+    return {
+      supportsCost: algoConfig?.supportsCost ?? false,
+      algorithmName: algoConfig?.label ?? "Unknown",
+    };
+  }, [algorithm]);
+}
 
 // ============================================================================
 // Компонент палитры узлов
@@ -82,9 +131,28 @@ const ALGORITHMS = [
 interface NodePaletteProps {
   onAddNode: (type: NodeType) => void;
   disabled?: boolean;
+  hasSource: boolean;
+  hasSink: boolean;
 }
 
-function NodePalette({ onAddNode, disabled }: NodePaletteProps) {
+function NodePalette({
+  onAddNode,
+  disabled,
+  hasSource,
+  hasSink,
+}: NodePaletteProps) {
+  const handleAdd = (config: (typeof NODE_TYPES_CONFIG)[0]) => {
+    if (config.type === NodeType.SOURCE && hasSource) {
+      toast.error("Источник уже существует. Можно добавить только один.");
+      return;
+    }
+    if (config.type === NodeType.SINK && hasSink) {
+      toast.error("Сток уже существует. Можно добавить только один.");
+      return;
+    }
+    onAddNode(config.type);
+  };
+
   return (
     <Card>
       <h3 className="font-medium mb-3 flex items-center gap-2">
@@ -92,44 +160,59 @@ function NodePalette({ onAddNode, disabled }: NodePaletteProps) {
         Добавить узел
       </h3>
       <div className="grid grid-cols-1 gap-2">
-        {NODE_TYPES_CONFIG.map((config) => (
-          <button
-            key={config.type}
-            onClick={() => onAddNode(config.type)}
-            disabled={disabled}
-            className={clsx(
-              "flex items-center gap-3 p-3 rounded-lg border-2 border-dashed transition-all text-left",
-              "hover:border-primary-400 hover:bg-primary-50",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              "border-gray-200 bg-white",
-            )}
-          >
-            <div
+        {NODE_TYPES_CONFIG.map((config) => {
+          const isDisabled =
+            disabled ||
+            (config.type === NodeType.SOURCE && hasSource) ||
+            (config.type === NodeType.SINK && hasSink);
+
+          const isAdded =
+            (config.type === NodeType.SOURCE && hasSource) ||
+            (config.type === NodeType.SINK && hasSink);
+
+          return (
+            <button
+              key={config.type}
+              onClick={() => handleAdd(config)}
+              disabled={isDisabled}
               className={clsx(
-                "w-8 h-8 rounded-full flex items-center justify-center text-white text-sm",
-                config.color,
+                "flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left",
+                isAdded
+                  ? "border-green-300 bg-green-50 cursor-default"
+                  : isDisabled
+                    ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
+                    : "border-dashed border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50",
               )}
             >
-              {config.icon}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-gray-900">{config.label}</p>
-              <p className="text-xs text-gray-500 truncate">
-                {config.description}
-              </p>
-            </div>
-          </button>
-        ))}
+              <div
+                className={clsx(
+                  "w-8 h-8 rounded-full flex items-center justify-center text-white text-sm",
+                  config.color,
+                )}
+              >
+                {config.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-gray-900">{config.label}</p>
+                  {isAdded && (
+                    <CheckCircleIcon className="w-4 h-4 text-green-500" />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 truncate">
+                  {config.description}
+                </p>
+              </div>
+            </button>
+          );
+        })}
       </div>
-      <p className="text-xs text-gray-400 mt-3">
-        💡 Или дважды кликните на холст
-      </p>
     </Card>
   );
 }
 
 // ============================================================================
-// Компонент быстрого создания ребра
+// Модальное окно добавления ребра
 // ============================================================================
 
 interface AddEdgeModalProps {
@@ -137,9 +220,16 @@ interface AddEdgeModalProps {
   onClose: () => void;
   nodes: Array<{ id: bigint; name?: string }>;
   onAdd: (from: bigint, to: bigint, capacity: number, cost: number) => void;
+  supportsCost: boolean;
 }
 
-function AddEdgeModal({ open, onClose, nodes, onAdd }: AddEdgeModalProps) {
+function AddEdgeModal({
+  open,
+  onClose,
+  nodes,
+  onAdd,
+  supportsCost,
+}: AddEdgeModalProps) {
   const [fromId, setFromId] = useState<string>("");
   const [toId, setToId] = useState<string>("");
   const [capacity, setCapacity] = useState(10);
@@ -155,7 +245,8 @@ function AddEdgeModal({ open, onClose, nodes, onAdd }: AddEdgeModalProps) {
       toast.error("Узлы должны быть разными");
       return;
     }
-    onAdd(BigInt(fromId), BigInt(toId), capacity, cost);
+    // Если алгоритм не поддерживает стоимость, передаём 0
+    onAdd(BigInt(fromId), BigInt(toId), capacity, supportsCost ? cost : 0);
     onClose();
     setFromId("");
     setToId("");
@@ -210,14 +301,35 @@ function AddEdgeModal({ open, onClose, nodes, onAdd }: AddEdgeModalProps) {
           required
         />
 
-        <Input
-          label="Стоимость за единицу"
-          type="number"
-          value={cost}
-          onChange={(e) => setCost(Number(e.target.value))}
-          min={0}
-          step={0.1}
-        />
+        {/* Поле стоимости - только для Min-Cost Flow */}
+        {supportsCost ? (
+          <Input
+            label="Стоимость за единицу"
+            type="number"
+            value={cost}
+            onChange={(e) => setCost(Number(e.target.value))}
+            min={0}
+            step={0.1}
+            hint="Стоимость транспортировки одной единицы потока"
+          />
+        ) : (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <InformationCircleIcon className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-600">
+                <p className="font-medium">Стоимость недоступна</p>
+                <p className="text-gray-500 mt-1">
+                  Выбранный алгоритм не учитывает стоимость рёбер. Для
+                  минимизации затрат используйте{" "}
+                  <span className="font-medium text-emerald-600">
+                    Min-Cost Flow
+                  </span>
+                  .
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
           <Button type="submit" className="flex-1">
@@ -233,10 +345,123 @@ function AddEdgeModal({ open, onClose, nodes, onAdd }: AddEdgeModalProps) {
 }
 
 // ============================================================================
-// Главный компонент редактора
+// Компонент настроек алгоритма
+// ============================================================================
+
+interface AlgorithmSettingsProps {
+  algorithm: Algorithm;
+  onAlgorithmChange: (algorithm: Algorithm) => void;
+}
+
+function AlgorithmSettings({
+  algorithm,
+  onAlgorithmChange,
+}: AlgorithmSettingsProps) {
+  const { supportsCost } = useAlgorithmSupport(algorithm);
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-medium">Настройки алгоритма</h3>
+        <Link
+          to="/algorithms"
+          className="text-xs text-primary-600 hover:text-primary-700"
+        >
+          Подробнее →
+        </Link>
+      </div>
+
+      <div className="space-y-3">
+        {ALGORITHMS.map((algo) => (
+          <label
+            key={algo.value}
+            className={clsx(
+              "flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all",
+              algorithm === algo.value
+                ? "border-primary-500 bg-primary-50"
+                : "border-gray-200 hover:border-gray-300",
+            )}
+          >
+            <input
+              type="radio"
+              name="algorithm"
+              value={algo.value}
+              checked={algorithm === algo.value}
+              onChange={() => onAlgorithmChange(algo.value)}
+              className="mt-1"
+            />
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-900">{algo.label}</span>
+                {algo.supportsCost && (
+                  <Badge variant="success" size="sm">
+                    <CurrencyDollarIcon className="w-3 h-3 mr-1" />
+                    Cost
+                  </Badge>
+                )}
+                {algo.value === Algorithm.DINIC && (
+                  <Badge variant="info" size="sm">
+                    Рекомендуется
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{algo.description}</p>
+            </div>
+          </label>
+        ))}
+      </div>
+
+      {/* Подсказка о стоимости */}
+      <div
+        className={clsx(
+          "mt-4 p-3 rounded-lg border",
+          supportsCost
+            ? "bg-emerald-50 border-emerald-200"
+            : "bg-gray-50 border-gray-200",
+        )}
+      >
+        <div className="flex items-start gap-2">
+          {supportsCost ? (
+            <CurrencyDollarIcon className="w-5 h-5 text-emerald-600 shrink-0" />
+          ) : (
+            <InformationCircleIcon className="w-5 h-5 text-gray-400 shrink-0" />
+          )}
+          <div className="text-sm">
+            {supportsCost ? (
+              <>
+                <p className="font-medium text-emerald-800">
+                  Учёт стоимости включён
+                </p>
+                <p className="text-emerald-600 mt-1">
+                  Алгоритм найдёт максимальный поток с минимальной общей
+                  стоимостью. Укажите стоимость для каждого ребра.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-gray-700">
+                  Только максимальный поток
+                </p>
+                <p className="text-gray-500 mt-1">
+                  Этот алгоритм находит максимальный поток без учёта стоимости.
+                  Для оптимизации затрат выберите Min-Cost Flow.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Главный компонент
 // ============================================================================
 
 export default function NetworkEditor() {
+  const queryClient = useQueryClient();
+
   const {
     nodes,
     edges,
@@ -246,6 +471,7 @@ export default function NetworkEditor() {
     algorithm,
     flowResult,
     metrics,
+    solvedGraph,
     selectedNodeId,
     selectedEdgeKey,
     isLoading,
@@ -264,10 +490,49 @@ export default function NetworkEditor() {
     clearGraph,
     clearSolution,
     loadGraph,
+    hasSolution,
   } = useGraphStore();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showAddEdge, setShowAddEdge] = useState(false);
+  const [autoSave, setAutoSave] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
+
+  const hasSource = sourceId !== null;
+  const hasSink = sinkId !== null;
+  const canSave = hasSolution();
+
+  // Определяем поддержку стоимости для текущего алгоритма
+  const { supportsCost, algorithmName } = useAlgorithmSupport(algorithm);
+
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!flowResult) {
+        throw new Error("Сначала выполните оптимизацию");
+      }
+
+      const graph = getGraph();
+
+      return historyService.saveCalculation({
+        name: name || "Безымянный расчёт",
+        graph,
+        flowResult,
+        solvedGraph: solvedGraph ?? undefined,
+        metrics,
+      });
+    },
+    onSuccess: (_response: SaveCalculationResponse) => {
+      toast.success(`Сохранено в историю`);
+      setIsSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["calculations"] });
+      queryClient.invalidateQueries({ queryKey: ["statistics"] });
+    },
+    onError: (error: Error) => {
+      console.error("Save error:", error);
+      toast.error(`Ошибка сохранения: ${error.message}`);
+    },
+  });
 
   // Solve mutation
   const solveMutation = useMutation({
@@ -275,22 +540,54 @@ export default function NetworkEditor() {
       if (sourceId === null || sinkId === null) {
         return Promise.reject(new Error("Укажите источник и сток"));
       }
-      const graph = getGraph();
       return solverService.solve({
-        graph,
+        graph: getGraph(),
         algorithm,
         options: { returnPaths: true },
       });
     },
-    onMutate: () => setLoading(true),
-    onSuccess: (response: SolveGraphResponse) => {
+    onMutate: () => {
+      setLoading(true);
+      setIsSaved(false);
+    },
+    onSuccess: async (response: SolveGraphResponse) => {
       if (response.success && response.result && response.solvedGraph) {
         setSolution(
           response.solvedGraph,
           response.result,
           response.metrics ?? null,
         );
-        toast.success(`Найден максимальный поток: ${response.result.maxFlow}`);
+
+        // Сообщение зависит от алгоритма
+        if (supportsCost && response.result.totalCost > 0) {
+          toast.success(
+            `Макс. поток: ${response.result.maxFlow}, Мин. стоимость: ₽${response.result.totalCost.toFixed(2)}`,
+          );
+        } else {
+          toast.success(
+            `Найден максимальный поток: ${response.result.maxFlow}`,
+          );
+        }
+
+        // Автосохранение
+        if (autoSave) {
+          try {
+            const graph = getGraph();
+            await historyService.saveCalculation({
+              name: name || "Безымянный расчёт",
+              graph,
+              flowResult: response.result,
+              solvedGraph: response.solvedGraph,
+              metrics: response.metrics ?? null,
+            });
+            setIsSaved(true);
+            queryClient.invalidateQueries({ queryKey: ["calculations"] });
+            queryClient.invalidateQueries({ queryKey: ["statistics"] });
+            toast.success("Автосохранено в историю");
+          } catch (e) {
+            console.error("Auto-save failed:", e);
+          }
+        }
       } else {
         toast.error(response.errorMessage || "Ошибка решения");
       }
@@ -299,71 +596,41 @@ export default function NetworkEditor() {
     onSettled: () => setLoading(false),
   });
 
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const graph = getGraph();
-      return historyService.saveCalculation({
-        name,
-        graph,
-        result: flowResult
-          ? {
-              $typeName: "logistics.gateway.v1.SolveGraphResponse",
-              success: true,
-              result: flowResult,
-              solvedGraph: getGraph(),
-              metrics: metrics ?? undefined,
-              errorMessage: "",
-            }
-          : undefined,
-      });
-    },
-    onSuccess: (response: SaveCalculationResponse) => {
-      toast.success(`Сохранено: ${response.calculationId}`);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
+  // Ручное сохранение
+  const handleManualSave = () => {
+    if (!canSave) {
+      toast.error("Сначала выполните оптимизацию");
+      return;
+    }
+    saveMutation.mutate();
+  };
 
-  // Добавление узла определённого типа
+  // Добавление узла
   const handleAddNodeOfType = useCallback(
     (type: NodeType) => {
-      // Размещаем в центре с небольшим смещением
       const offsetX = (nodes.length % 5) * 1.5;
       const offsetY = Math.floor(nodes.length / 5) * 1.5;
+      const config = NODE_TYPES_CONFIG.find((c) => c.type === type);
 
       const newNode = addNode({
         x: 2 + offsetX,
         y: 2 + offsetY,
         type,
-        name: `${NODE_TYPES_CONFIG.find((c) => c.type === type)?.label} ${nodes.length + 1}`,
+        name: `${config?.label} ${nodes.length + 1}`,
       });
 
-      // Автоматически устанавливаем source/sink
-      if (type === NodeType.SOURCE && sourceId === null) {
+      if (type === NodeType.SOURCE) {
         setSourceSink(newNode.id, sinkId);
-        toast.success("Источник установлен");
-      } else if (type === NodeType.SINK && sinkId === null) {
+        toast.success("Источник добавлен");
+      } else if (type === NodeType.SINK) {
         setSourceSink(sourceId, newNode.id);
-        toast.success("Сток установлен");
+        toast.success("Сток добавлен");
       }
 
       clearSolution();
+      setIsSaved(false);
     },
     [addNode, nodes.length, sourceId, sinkId, setSourceSink, clearSolution],
-  );
-
-  // Добавление узла на холсте
-  const handleAddNodeOnCanvas = useCallback(
-    (x: number, y: number) => {
-      addNode({
-        x,
-        y,
-        type: NodeType.INTERSECTION,
-        name: `Узел ${nodes.length + 1}`,
-      });
-      clearSolution();
-    },
-    [addNode, nodes.length, clearSolution],
   );
 
   // Добавление ребра
@@ -373,6 +640,7 @@ export default function NetworkEditor() {
       if (edge) {
         toast.success("Ребро добавлено");
         clearSolution();
+        setIsSaved(false);
       } else {
         toast.error("Ребро уже существует");
       }
@@ -386,8 +654,8 @@ export default function NetworkEditor() {
       toast.error("Добавьте минимум 2 узла");
       return;
     }
-    if (sourceId === null || sinkId === null) {
-      toast.error("Укажите источник и сток");
+    if (!hasSource || !hasSink) {
+      toast.error("Добавьте источник и сток");
       return;
     }
     if (edges.length === 0) {
@@ -397,7 +665,7 @@ export default function NetworkEditor() {
     solveMutation.mutate();
   };
 
-  // Экспорт графа
+  // Экспорт
   const handleExport = () => {
     try {
       const graph = getGraph();
@@ -419,7 +687,7 @@ export default function NetworkEditor() {
     }
   };
 
-  // Импорт графа
+  // Импорт
   const handleImport = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -441,6 +709,7 @@ export default function NetworkEditor() {
         });
         loadGraph(graph);
         toast.success("Граф загружен");
+        setIsSaved(false);
       } catch {
         toast.error("Ошибка загрузки файла");
       }
@@ -448,42 +717,40 @@ export default function NetworkEditor() {
     input.click();
   };
 
-  // Создание примера сети
+  // Создание примера
   const handleCreateExample = () => {
     clearGraph();
-
-    // Добавляем узлы
     const source = addNode({
       x: 1,
       y: 3,
       type: NodeType.SOURCE,
       name: "Источник",
     });
-    const warehouse1 = addNode({
+    const w1 = addNode({
       x: 3,
       y: 1,
       type: NodeType.WAREHOUSE,
       name: "Склад А",
     });
-    const warehouse2 = addNode({
+    const w2 = addNode({
       x: 3,
       y: 5,
       type: NodeType.WAREHOUSE,
       name: "Склад Б",
     });
-    const intersection = addNode({
+    const inter = addNode({
       x: 5,
       y: 3,
       type: NodeType.INTERSECTION,
       name: "Узел",
     });
-    const delivery1 = addNode({
+    const d1 = addNode({
       x: 7,
       y: 2,
       type: NodeType.DELIVERY_POINT,
       name: "Точка 1",
     });
-    const delivery2 = addNode({
+    const d2 = addNode({
       x: 7,
       y: 4,
       type: NodeType.DELIVERY_POINT,
@@ -491,57 +758,99 @@ export default function NetworkEditor() {
     });
     const sink = addNode({ x: 9, y: 3, type: NodeType.SINK, name: "Сток" });
 
-    // Добавляем рёбра
-    addEdge({ from: source.id, to: warehouse1.id, capacity: 15, cost: 2 });
-    addEdge({ from: source.id, to: warehouse2.id, capacity: 12, cost: 3 });
-    addEdge({
-      from: warehouse1.id,
-      to: intersection.id,
-      capacity: 10,
-      cost: 1,
-    });
-    addEdge({ from: warehouse2.id, to: intersection.id, capacity: 8, cost: 2 });
-    addEdge({ from: warehouse1.id, to: delivery1.id, capacity: 7, cost: 4 });
-    addEdge({ from: intersection.id, to: delivery1.id, capacity: 5, cost: 1 });
-    addEdge({ from: intersection.id, to: delivery2.id, capacity: 6, cost: 2 });
-    addEdge({ from: warehouse2.id, to: delivery2.id, capacity: 9, cost: 3 });
-    addEdge({ from: delivery1.id, to: sink.id, capacity: 12, cost: 1 });
-    addEdge({ from: delivery2.id, to: sink.id, capacity: 14, cost: 1 });
+    // Стоимость добавляем только если алгоритм поддерживает
+    const costMultiplier = supportsCost ? 1 : 0;
 
-    // Устанавливаем source/sink
+    addEdge({
+      from: source.id,
+      to: w1.id,
+      capacity: 15,
+      cost: 2 * costMultiplier,
+    });
+    addEdge({
+      from: source.id,
+      to: w2.id,
+      capacity: 12,
+      cost: 3 * costMultiplier,
+    });
+    addEdge({
+      from: w1.id,
+      to: inter.id,
+      capacity: 10,
+      cost: 1 * costMultiplier,
+    });
+    addEdge({
+      from: w2.id,
+      to: inter.id,
+      capacity: 8,
+      cost: 2 * costMultiplier,
+    });
+    addEdge({
+      from: w1.id,
+      to: d1.id,
+      capacity: 7,
+      cost: 4 * costMultiplier,
+    });
+    addEdge({
+      from: inter.id,
+      to: d1.id,
+      capacity: 5,
+      cost: 1 * costMultiplier,
+    });
+    addEdge({
+      from: inter.id,
+      to: d2.id,
+      capacity: 6,
+      cost: 2 * costMultiplier,
+    });
+    addEdge({
+      from: w2.id,
+      to: d2.id,
+      capacity: 9,
+      cost: 3 * costMultiplier,
+    });
+    addEdge({
+      from: d1.id,
+      to: sink.id,
+      capacity: 12,
+      cost: 1 * costMultiplier,
+    });
+    addEdge({
+      from: d2.id,
+      to: sink.id,
+      capacity: 14,
+      cost: 1 * costMultiplier,
+    });
+
     setSourceSink(source.id, sink.id);
     setName("Пример логистической сети");
-
     toast.success("Пример сети создан");
+    setIsSaved(false);
   };
 
-  // Получаем выбранные элементы
   const selectedNode =
     selectedNodeId !== null ? nodes.find((n) => n.id === selectedNodeId) : null;
-
   const selectedEdge = selectedEdgeKey
     ? edges.find(
         (e) => e.from === selectedEdgeKey.from && e.to === selectedEdgeKey.to,
       )
     : null;
-
-  // Проверка готовности к решению
   const canSolve =
-    nodes.length >= 2 &&
-    edges.length > 0 &&
-    sourceId !== null &&
-    sinkId !== null;
+    nodes.length >= 2 && edges.length > 0 && hasSource && hasSink;
 
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-4">
       {/* Левая панель */}
       <div className="w-80 flex flex-col gap-4 overflow-y-auto">
-        {/* Заголовок и настройки */}
+        {/* Контролы */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <Input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setIsSaved(false);
+              }}
               className="text-lg font-medium"
               placeholder="Название сети"
             />
@@ -558,7 +867,17 @@ export default function NetworkEditor() {
             </button>
           </div>
 
-          {/* Основные кнопки */}
+          {/* Индикатор текущего алгоритма */}
+          <div className="flex items-center gap-2 mb-4 text-sm">
+            <span className="text-gray-500">Алгоритм:</span>
+            <Badge variant={supportsCost ? "success" : "default"}>
+              {algorithmName}
+            </Badge>
+            {supportsCost && (
+              <CurrencyDollarIcon className="w-4 h-4 text-emerald-500" />
+            )}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={handleSolve}
@@ -569,24 +888,47 @@ export default function NetworkEditor() {
             >
               Решить
             </Button>
-
             <Button
-              variant="secondary"
-              onClick={() => saveMutation.mutate()}
+              variant={isSaved ? "ghost" : "secondary"}
+              onClick={handleManualSave}
               loading={saveMutation.isPending}
-              disabled={nodes.length === 0}
+              disabled={!hasSolution}
+              icon={
+                isSaved ? (
+                  <CheckCircleIcon className="w-4 h-4 text-green-500" />
+                ) : (
+                  <BookmarkIcon className="w-4 h-4" />
+                )
+              }
+              title={!hasSolution ? "Сначала выполните оптимизацию" : ""}
             >
-              Сохранить
+              {isSaved ? "✓" : "Сохранить"}
             </Button>
           </div>
 
-          {/* Дополнительные кнопки */}
+          {/* Автосохранение */}
+          <label className="flex items-center gap-2 mt-3 text-sm">
+            <input
+              type="checkbox"
+              checked={autoSave}
+              onChange={(e) => setAutoSave(e.target.checked)}
+              className="rounded text-primary-600"
+            />
+            <span className="text-gray-600">Автосохранение после решения</span>
+          </label>
+
+          {!hasSolution && nodes.length > 0 && (
+            <p className="text-xs text-gray-400 mt-2">
+              💡 Сохранение доступно после оптимизации
+            </p>
+          )}
+
           <div className="flex gap-2 mt-3">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleExport}
-              disabled={nodes.length === 0}
+              disabled={!canSolve}
               className="flex-1"
             >
               <ArrowDownTrayIcon className="w-4 h-4 mr-1" />
@@ -625,11 +967,10 @@ export default function NetworkEditor() {
             </Button>
           </div>
 
-          {/* Предупреждения */}
           {!canSolve && nodes.length > 0 && (
             <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-              {sourceId === null && <p>⚠️ Добавьте источник</p>}
-              {sinkId === null && <p>⚠️ Добавьте сток</p>}
+              {!hasSource && <p>⚠️ Добавьте источник</p>}
+              {!hasSink && <p>⚠️ Добавьте сток</p>}
               {edges.length === 0 && <p>⚠️ Добавьте рёбра</p>}
             </div>
           )}
@@ -637,71 +978,21 @@ export default function NetworkEditor() {
 
         {/* Настройки алгоритма */}
         {showSettings && (
-          <Card>
-            <h3 className="font-medium mb-3">Настройки</h3>
-
-            <Select
-              label="Алгоритм"
-              value={algorithm}
-              onChange={(e) =>
-                setAlgorithm(Number(e.target.value) as Algorithm)
-              }
-              options={ALGORITHMS.map((a) => ({
-                value: a.value,
-                label: a.label,
-              }))}
-            />
-
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <div>
-                <label className="label">Источник</label>
-                <select
-                  value={sourceId?.toString() ?? ""}
-                  onChange={(e) =>
-                    setSourceSink(
-                      e.target.value ? BigInt(e.target.value) : null,
-                      sinkId,
-                    )
-                  }
-                  className="input text-sm"
-                >
-                  <option value="">Не выбран</option>
-                  {nodes.map((n) => (
-                    <option key={String(n.id)} value={String(n.id)}>
-                      {n.name || `Узел ${n.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="label">Сток</label>
-                <select
-                  value={sinkId?.toString() ?? ""}
-                  onChange={(e) =>
-                    setSourceSink(
-                      sourceId,
-                      e.target.value ? BigInt(e.target.value) : null,
-                    )
-                  }
-                  className="input text-sm"
-                >
-                  <option value="">Не выбран</option>
-                  {nodes.map((n) => (
-                    <option key={String(n.id)} value={String(n.id)}>
-                      {n.name || `Узел ${n.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </Card>
+          <AlgorithmSettings
+            algorithm={algorithm}
+            onAlgorithmChange={setAlgorithm}
+          />
         )}
 
         {/* Палитра узлов */}
-        <NodePalette onAddNode={handleAddNodeOfType} disabled={isLoading} />
+        <NodePalette
+          onAddNode={handleAddNodeOfType}
+          disabled={isLoading}
+          hasSource={hasSource}
+          hasSink={hasSink}
+        />
 
-        {/* Кнопка добавления ребра */}
+        {/* Добавление ребра */}
         <Card>
           <Button
             variant="secondary"
@@ -717,121 +1008,70 @@ export default function NetworkEditor() {
           </p>
         </Card>
 
-        {/* Редактор выбранного узла */}
+        {/* Редактор узла */}
         {selectedNode && (
           <Card>
             <h3 className="font-medium mb-3">
-              Редактирование узла #{String(selectedNode.id)}
+              Узел #{String(selectedNode.id)}
             </h3>
-
             <Input
               label="Название"
               value={selectedNode.name ?? ""}
-              onChange={(e) =>
-                updateNode(selectedNode.id, { name: e.target.value })
-              }
+              onChange={(e) => {
+                updateNode(selectedNode.id, { name: e.target.value });
+                setIsSaved(false);
+              }}
             />
-
-            <div className="mt-3">
-              <Select
-                label="Тип"
-                value={selectedNode.type}
-                onChange={(e) =>
-                  updateNode(selectedNode.id, {
-                    type: Number(e.target.value) as NodeType,
-                  })
-                }
-                options={NODE_TYPES_CONFIG.map((t) => ({
-                  value: t.type,
-                  label: `${t.icon} ${t.label}`,
-                }))}
-              />
-            </div>
-
-            <div className="flex gap-2 mt-4">
-              {sourceId !== selectedNode.id && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSourceSink(selectedNode.id, sinkId)}
-                  className="flex-1"
-                >
-                  Сделать источником
-                </Button>
-              )}
-              {sinkId !== selectedNode.id && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSourceSink(sourceId, selectedNode.id)}
-                  className="flex-1"
-                >
-                  Сделать стоком
-                </Button>
-              )}
-            </div>
-
             <Button
               variant="danger"
               onClick={() => removeNode(selectedNode.id)}
-              className="w-full mt-3"
+              className="w-full mt-4"
             >
               Удалить узел
             </Button>
           </Card>
         )}
 
-        {/* Редактор выбранного ребра */}
+        {/* Редактор ребра */}
         {selectedEdge && (
           <Card>
             <h3 className="font-medium mb-3">
               Ребро {String(selectedEdge.from)} → {String(selectedEdge.to)}
             </h3>
-
             <Input
               label="Пропускная способность"
               type="number"
               value={selectedEdge.capacity}
-              onChange={(e) =>
+              onChange={(e) => {
                 updateEdge(selectedEdge.from, selectedEdge.to, {
                   capacity: Number(e.target.value),
-                })
-              }
+                });
+                setIsSaved(false);
+              }}
               min={0}
             />
 
-            <div className="mt-3">
+            {/* Стоимость только для Min-Cost Flow */}
+            {supportsCost ? (
               <Input
                 label="Стоимость"
                 type="number"
                 value={selectedEdge.cost ?? 0}
-                onChange={(e) =>
+                onChange={(e) => {
                   updateEdge(selectedEdge.from, selectedEdge.to, {
                     cost: Number(e.target.value),
-                  })
-                }
+                  });
+                  setIsSaved(false);
+                }}
                 min={0}
-                step={0.1}
+                className="mt-3"
               />
-            </div>
-
-            {selectedEdge.currentFlow !== undefined &&
-              selectedEdge.currentFlow > 0 && (
-                <div className="mt-3 p-2 bg-blue-50 rounded text-sm">
-                  <p>
-                    Текущий поток: <strong>{selectedEdge.currentFlow}</strong> /{" "}
-                    {selectedEdge.capacity}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Загрузка:{" "}
-                    {(
-                      (selectedEdge.currentFlow / selectedEdge.capacity) *
-                      100
-                    ).toFixed(1)}
-                    %
-                  </p>
-                </div>
-              )}
+            ) : (
+              <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-500">
+                <InformationCircleIcon className="w-4 h-4 inline mr-1" />
+                Стоимость доступна только для Min-Cost Flow
+              </div>
+            )}
 
             <Button
               variant="danger"
@@ -846,9 +1086,7 @@ export default function NetworkEditor() {
         {/* Результаты */}
         {flowResult && (
           <Card className="bg-green-50 border-green-200">
-            <h3 className="font-medium text-green-800 mb-3">
-              ✅ Результат оптимизации
-            </h3>
+            <h3 className="font-medium text-green-800 mb-3">✅ Результат</h3>
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">Max Flow:</span>
@@ -856,16 +1094,15 @@ export default function NetworkEditor() {
                   {flowResult.maxFlow}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Общая стоимость:</span>
-                <span className="font-medium">
-                  ₽{flowResult.totalCost.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Итераций:</span>
-                <span>{flowResult.iterations}</span>
-              </div>
+              {/* Стоимость показываем только если она есть и алгоритм поддерживает */}
+              {supportsCost && flowResult.totalCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Мин. стоимость:</span>
+                  <span className="font-medium text-emerald-700">
+                    ₽{flowResult.totalCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
               {metrics && (
                 <div className="flex justify-between">
                   <span className="text-gray-600">Время:</span>
@@ -873,10 +1110,16 @@ export default function NetworkEditor() {
                 </div>
               )}
             </div>
+            {isSaved && (
+              <div className="mt-3 pt-3 border-t border-green-200 text-sm text-green-600 flex items-center gap-1">
+                <CheckCircleIcon className="w-4 h-4" />
+                Сохранено в историю
+              </div>
+            )}
           </Card>
         )}
 
-        {/* Статистика графа */}
+        {/* Статистика */}
         <Card className="bg-gray-50">
           <h3 className="font-medium mb-2 text-sm text-gray-600">Статистика</h3>
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -888,24 +1131,18 @@ export default function NetworkEditor() {
               <span className="text-gray-500">Рёбер:</span>{" "}
               <strong>{edges.length}</strong>
             </div>
-            <div>
-              <span className="text-gray-500">Общая capacity:</span>{" "}
-              <strong>{edges.reduce((sum, e) => sum + e.capacity, 0)}</strong>
-            </div>
           </div>
         </Card>
       </div>
 
-      {/* Холст */}
+      {/* Canvas */}
       <div className="flex-1 card p-0 overflow-hidden relative">
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 z-10">
             <div className="text-center">
               <p className="text-gray-500 mb-4">Начните создавать сеть</p>
               <div className="flex gap-2 justify-center">
-                <Button onClick={handleCreateExample} variant="primary">
-                  Загрузить пример
-                </Button>
+                <Button onClick={handleCreateExample}>Загрузить пример</Button>
                 <Button
                   onClick={() => handleAddNodeOfType(NodeType.SOURCE)}
                   variant="secondary"
@@ -916,20 +1153,15 @@ export default function NetworkEditor() {
             </div>
           </div>
         )}
-
-        <GraphCanvas
-          onNodeSelect={() => {}}
-          onEdgeSelect={() => {}}
-          onNodeAdd={handleAddNodeOnCanvas}
-        />
+        <GraphCanvas onNodeSelect={() => {}} onEdgeSelect={() => {}} />
       </div>
 
-      {/* Модальное окно добавления ребра */}
       <AddEdgeModal
         open={showAddEdge}
         onClose={() => setShowAddEdge(false)}
         nodes={nodes}
         onAdd={handleAddEdge}
+        supportsCost={supportsCost}
       />
     </div>
   );

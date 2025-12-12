@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -51,13 +51,14 @@ func Init(ctx context.Context, cfg Config) (*Provider, error) {
 	}
 
 	// Resource с метаданными сервиса
+	// Используем обновленные ключи из semconv v1.26.0
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName(cfg.ServiceName),
-			semconv.ServiceVersion(cfg.Version),
-			semconv.DeploymentEnvironment(cfg.Environment),
+			semconv.ServiceNameKey.String(cfg.ServiceName),
+			semconv.ServiceVersionKey.String(cfg.Version),
+			semconv.DeploymentEnvironmentKey.String(cfg.Environment),
 		),
 	)
 	if err != nil {
