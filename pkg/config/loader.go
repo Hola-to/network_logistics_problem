@@ -1,4 +1,3 @@
-// pkg/config/loader.go
 package config
 
 import (
@@ -109,7 +108,7 @@ func (l *Loader) loadDefaults() error {
 
 		// GRPC
 		"grpc.port":                               50051,
-		"grpc.max_recv_msg_size":                  16 * 1024 * 1024, // 16MB
+		"grpc.max_recv_msg_size":                  16 * 1024 * 1024,
 		"grpc.max_send_msg_size":                  16 * 1024 * 1024,
 		"grpc.max_concurrent_conn":                1000,
 		"grpc.keepalive.max_connection_idle":      15 * time.Minute,
@@ -120,14 +119,16 @@ func (l *Loader) loadDefaults() error {
 		"grpc.tls.enabled":                        false,
 
 		// HTTP
-		"http.port":                   8080,
-		"http.read_timeout":           30 * time.Second,
-		"http.write_timeout":          30 * time.Second,
-		"http.shutdown_timeout":       10 * time.Second,
+		"http.port":             8080,
+		"http.read_timeout":     30 * time.Second,
+		"http.write_timeout":    30 * time.Second,
+		"http.shutdown_timeout": 10 * time.Second,
+		// CORS - явно указываем Authorization!
 		"http.cors.enabled":           true,
 		"http.cors.allowed_origins":   []string{"*"},
-		"http.cors.allowed_methods":   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		"http.cors.allowed_headers":   []string{"*"},
+		"http.cors.allowed_methods":   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		"http.cors.allowed_headers":   []string{"Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With", "X-Grpc-Web", "Grpc-Timeout", "Grpc-Metadata-*"},
+		"http.cors.exposed_headers":   []string{"Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin"},
 		"http.cors.allow_credentials": false,
 		"http.cors.max_age":           86400,
 
@@ -310,14 +311,12 @@ func (l *Loader) loadDefaults() error {
 
 // loadConfigFile загружает конфигурацию из файла
 func (l *Loader) loadConfigFile() error {
-	// Сначала проверяем переменную окружения
 	if configPath := os.Getenv(configEnvVar); configPath != "" {
 		if _, err := os.Stat(configPath); err == nil {
 			return l.k.Load(file.Provider(configPath), yaml.Parser())
 		}
 	}
 
-	// Ищем файл по списку путей
 	for _, path := range l.configPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -333,16 +332,171 @@ func (l *Loader) loadConfigFile() error {
 }
 
 // loadEnv загружает конфигурацию из переменных окружения
+// Использует умную трансформацию ключей для полей с подчёркиванием
 func (l *Loader) loadEnv() error {
-	return l.k.Load(env.Provider(l.envPrefix, ".", func(s string) string {
-		// LOGISTICS_GRPC_PORT -> grpc.port
-		return strings.ReplaceAll(
-			strings.ToLower(
-				strings.TrimPrefix(s, l.envPrefix),
-			),
-			"_", ".",
-		)
+	return l.k.Load(env.ProviderWithValue(l.envPrefix, ".", func(envKey string, value string) (string, interface{}) {
+		// Убираем префикс и приводим к нижнему регистру
+		key := strings.ToLower(strings.TrimPrefix(envKey, l.envPrefix))
+
+		// Маппинг для полей с подчёркиванием в именах
+		if mappedKey, ok := envKeyMappings[key]; ok {
+			key = mappedKey
+		} else {
+			// По умолчанию заменяем все подчёркивания на точки
+			key = strings.ReplaceAll(key, "_", ".")
+		}
+
+		// Для slice-полей разбиваем по запятой
+		if isSliceField(key) {
+			return key, splitAndTrim(value)
+		}
+
+		return key, value
 	}), nil)
+}
+
+// envKeyMappings - маппинг переменных окружения на ключи конфига
+// Необходим для полей, содержащих подчёркивания в именах
+var envKeyMappings = map[string]string{
+	// HTTP CORS
+	"http_cors_enabled":           "http.cors.enabled",
+	"http_cors_allowed_origins":   "http.cors.allowed_origins",
+	"http_cors_allowed_methods":   "http.cors.allowed_methods",
+	"http_cors_allowed_headers":   "http.cors.allowed_headers",
+	"http_cors_exposed_headers":   "http.cors.exposed_headers",
+	"http_cors_allow_credentials": "http.cors.allow_credentials",
+	"http_cors_max_age":           "http.cors.max_age",
+
+	// HTTP
+	"http_port":             "http.port",
+	"http_read_timeout":     "http.read_timeout",
+	"http_write_timeout":    "http.write_timeout",
+	"http_shutdown_timeout": "http.shutdown_timeout",
+
+	// Database
+	"database_driver":             "database.driver",
+	"database_host":               "database.host",
+	"database_port":               "database.port",
+	"database_database":           "database.database",
+	"database_username":           "database.username",
+	"database_password":           "database.password",
+	"database_ssl_mode":           "database.ssl_mode",
+	"database_max_open_conns":     "database.max_open_conns",
+	"database_max_idle_conns":     "database.max_idle_conns",
+	"database_conn_max_lifetime":  "database.conn_max_lifetime",
+	"database_conn_max_idle_time": "database.conn_max_idle_time",
+	"database_migrations_path":    "database.migrations_path",
+	"database_auto_migrate":       "database.auto_migrate",
+
+	// Cache
+	"cache_enabled":     "cache.enabled",
+	"cache_driver":      "cache.driver",
+	"cache_host":        "cache.host",
+	"cache_port":        "cache.port",
+	"cache_password":    "cache.password",
+	"cache_db":          "cache.db",
+	"cache_default_ttl": "cache.default_ttl",
+	"cache_max_entries": "cache.max_entries",
+
+	// Rate limit
+	"rate_limit_enabled":          "rate_limit.enabled",
+	"rate_limit_requests":         "rate_limit.requests",
+	"rate_limit_window":           "rate_limit.window",
+	"rate_limit_strategy":         "rate_limit.strategy",
+	"rate_limit_backend":          "rate_limit.backend",
+	"rate_limit_burst_size":       "rate_limit.burst_size",
+	"rate_limit_cleanup_interval": "rate_limit.cleanup_interval",
+	"rate_limit_redis_addr":       "rate_limit.redis_addr",
+
+	// Audit
+	"audit_enabled":          "audit.enabled",
+	"audit_backend":          "audit.backend",
+	"audit_file_path":        "audit.file_path",
+	"audit_buffer_size":      "audit.buffer_size",
+	"audit_flush_period":     "audit.flush_period",
+	"audit_exclude_methods":  "audit.exclude_methods",
+	"audit_include_request":  "audit.include_request",
+	"audit_include_response": "audit.include_response",
+
+	// GRPC
+	"grpc_port":                               "grpc.port",
+	"grpc_max_recv_msg_size":                  "grpc.max_recv_msg_size",
+	"grpc_max_send_msg_size":                  "grpc.max_send_msg_size",
+	"grpc_max_concurrent_conn":                "grpc.max_concurrent_conn",
+	"grpc_keepalive_max_connection_idle":      "grpc.keepalive.max_connection_idle",
+	"grpc_keepalive_max_connection_age":       "grpc.keepalive.max_connection_age",
+	"grpc_keepalive_max_connection_age_grace": "grpc.keepalive.max_connection_age_grace",
+	"grpc_keepalive_time":                     "grpc.keepalive.time",
+	"grpc_keepalive_timeout":                  "grpc.keepalive.timeout",
+	"grpc_tls_enabled":                        "grpc.tls.enabled",
+	"grpc_tls_cert_file":                      "grpc.tls.cert_file",
+	"grpc_tls_key_file":                       "grpc.tls.key_file",
+	"grpc_tls_ca_file":                        "grpc.tls.ca_file",
+
+	// Log
+	"log_level":       "log.level",
+	"log_format":      "log.format",
+	"log_output":      "log.output",
+	"log_file_path":   "log.file_path",
+	"log_max_size":    "log.max_size",
+	"log_max_backups": "log.max_backups",
+	"log_max_age":     "log.max_age",
+	"log_compress":    "log.compress",
+
+	// Services (примеры)
+	"services_solver_host":     "services.solver.host",
+	"services_solver_port":     "services.solver.port",
+	"services_solver_timeout":  "services.solver.timeout",
+	"services_analytics_host":  "services.analytics.host",
+	"services_analytics_port":  "services.analytics.port",
+	"services_validation_host": "services.validation.host",
+	"services_validation_port": "services.validation.port",
+	"services_history_host":    "services.history.host",
+	"services_history_port":    "services.history.port",
+	"services_auth_host":       "services.auth.host",
+	"services_auth_port":       "services.auth.port",
+	"services_audit_host":      "services.audit.host",
+	"services_audit_port":      "services.audit.port",
+	"services_simulation_host": "services.simulation.host",
+	"services_simulation_port": "services.simulation.port",
+	"services_report_host":     "services.report.host",
+	"services_report_port":     "services.report.port",
+
+	// Report
+	"report_save_to_storage":       "report.save_to_storage",
+	"report_default_ttl":           "report.default_ttl",
+	"report_max_report_size_bytes": "report.max_report_size_bytes",
+	"report_cleanup_interval":      "report.cleanup_interval",
+	"report_default_language":      "report.default_language",
+	"report_default_theme":         "report.default_theme",
+}
+
+// sliceFields - поля, которые должны парситься как слайсы
+var sliceFields = map[string]bool{
+	"http.cors.allowed_origins": true,
+	"http.cors.allowed_methods": true,
+	"http.cors.allowed_headers": true,
+	"http.cors.exposed_headers": true,
+	"audit.exclude_methods":     true,
+}
+
+func isSliceField(key string) bool {
+	return sliceFields[key]
+}
+
+func splitAndTrim(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 // MustLoad загружает конфигурацию или паникует
@@ -366,12 +520,10 @@ func LoadWithServiceDefaults(serviceName string, defaultPort int) (*Config, erro
 		return nil, err
 	}
 
-	// Если порт не задан явно, используем дефолтный для сервиса
 	if cfg.GRPC.Port == 50051 && defaultPort != 0 {
 		cfg.GRPC.Port = defaultPort
 	}
 
-	// Обновляем имя сервиса
 	if cfg.App.Name == "logistics-service" {
 		cfg.App.Name = serviceName
 	}

@@ -510,3 +510,114 @@ func TestGetSortedNodeIDs_Empty(t *testing.T) {
 
 	assert.Empty(t, sorted)
 }
+
+func TestGetNetFlow(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1.0)
+
+	// Initially, no flow
+	edge := rg.GetEdge(1, 2)
+	assert.Equal(t, 0.0, GetNetFlow(edge))
+
+	// Push 5 units of flow
+	graph.AugmentPath(rg, []int64{1, 2}, 5)
+
+	// Net flow should be 5
+	edge = rg.GetEdge(1, 2)
+	assert.Equal(t, 5.0, GetNetFlow(edge))
+
+	// Now "cancel" 2 units by pushing flow back (simulating reverse edge usage)
+	// This happens when algorithm uses reverse edge from 2 to 1
+	reverseEdge := rg.GetEdge(2, 1)
+	assert.NotNil(t, reverseEdge)
+	assert.True(t, reverseEdge.IsReverse)
+
+	// Capacity of reverse edge should be 5 (the flow we pushed)
+	assert.Equal(t, 5.0, reverseEdge.Capacity)
+
+	// Push 2 units through reverse edge (2 -> 1)
+	rg.UpdateFlow(2, 1, 2)
+
+	// Now net flow on forward edge should be 3 (5 - 2)
+	edge = rg.GetEdge(1, 2)
+	assert.Equal(t, 3.0, GetNetFlow(edge))
+}
+
+func TestToFlowEdges_NoFlowExceedsCapacity(t *testing.T) {
+	// Create a graph where Ford-Fulkerson might use reverse edges
+	rg := graph.NewResidualGraph()
+	rg.AddNode(1)
+	rg.AddNode(2)
+	rg.AddNode(3)
+	rg.AddNode(4)
+
+	rg.AddEdgeWithReverse(1, 2, 10, 1.0)
+	rg.AddEdgeWithReverse(2, 3, 5, 1.0)
+	rg.AddEdgeWithReverse(1, 3, 10, 1.0)
+	rg.AddEdgeWithReverse(3, 4, 15, 1.0)
+
+	// Simulate flow: push 5 through 1->2->3->4
+	graph.AugmentPath(rg, []int64{1, 2, 3, 4}, 5)
+
+	// Push 10 through 1->3->4
+	graph.AugmentPath(rg, []int64{1, 3, 4}, 10)
+
+	// Now simulate using reverse edge: push some flow through path that uses 3->2
+	// This is what might happen in Ford-Fulkerson with DFS
+	// Let's say we want to push through 1->3->2->... but that doesn't make sense for sink at 4
+	// Skip this part - the point is just to verify no flow exceeds capacity
+
+	edges := ToFlowEdges(rg)
+	for _, e := range edges {
+		assert.LessOrEqual(t, e.Flow, e.Capacity,
+			"Flow on edge %d->%d should not exceed capacity: flow=%f, capacity=%f",
+			e.From, e.To, e.Flow, e.Capacity)
+		assert.LessOrEqual(t, e.Utilization, 1.0,
+			"Utilization on edge %d->%d should not exceed 1.0: %f",
+			e.From, e.To, e.Utilization)
+		assert.GreaterOrEqual(t, e.Flow, 0.0,
+			"Flow on edge %d->%d should be non-negative: %f",
+			e.From, e.To, e.Flow)
+	}
+}
+
+func TestGetUtilization(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1.0)
+
+	edge := rg.GetEdge(1, 2)
+
+	// No flow - 0% utilization
+	assert.Equal(t, 0.0, GetUtilization(edge))
+
+	// Push 5 units - 50% utilization
+	graph.AugmentPath(rg, []int64{1, 2}, 5)
+	edge = rg.GetEdge(1, 2)
+	assert.Equal(t, 0.5, GetUtilization(edge))
+
+	// Push 5 more - 100% utilization
+	graph.AugmentPath(rg, []int64{1, 2}, 5)
+	edge = rg.GetEdge(1, 2)
+	assert.Equal(t, 1.0, GetUtilization(edge))
+}
+
+func TestFlowStatistics(t *testing.T) {
+	rg := graph.NewResidualGraph()
+	rg.AddNode(1)
+	rg.AddNode(2)
+	rg.AddNode(3)
+
+	rg.AddEdgeWithReverse(1, 2, 10, 2.0)
+	rg.AddEdgeWithReverse(2, 3, 10, 3.0)
+
+	// Push 10 units of flow
+	graph.AugmentPath(rg, []int64{1, 2, 3}, 10)
+
+	stats := CalculateFlowStatistics(rg, 1)
+
+	assert.Equal(t, 10.0, stats.TotalFlow)
+	assert.Equal(t, 50.0, stats.TotalCost) // 10*2 + 10*3 = 50
+	assert.Equal(t, 2, stats.SaturatedEdges)
+	assert.Equal(t, 2, stats.ActiveEdges)
+	assert.Equal(t, 1.0, stats.AverageUtilization)
+}

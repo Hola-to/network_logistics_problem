@@ -245,8 +245,8 @@ function AddEdgeModal({
       toast.error("Узлы должны быть разными");
       return;
     }
-    // Если алгоритм не поддерживает стоимость, передаём 0
-    onAdd(BigInt(fromId), BigInt(toId), capacity, supportsCost ? cost : 0);
+    // Всегда передаём cost - данные сохраняются независимо от алгоритма
+    onAdd(BigInt(fromId), BigInt(toId), capacity, cost);
     onClose();
     setFromId("");
     setToId("");
@@ -301,7 +301,7 @@ function AddEdgeModal({
           required
         />
 
-        {/* Поле стоимости - только для Min-Cost Flow */}
+        {/* Поле стоимости - показываем только для Min-Cost Flow */}
         {supportsCost ? (
           <Input
             label="Стоимость за единицу"
@@ -317,10 +317,10 @@ function AddEdgeModal({
             <div className="flex items-start gap-2">
               <InformationCircleIcon className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
               <div className="text-sm text-gray-600">
-                <p className="font-medium">Стоимость недоступна</p>
+                <p className="font-medium">Стоимость не учитывается</p>
                 <p className="text-gray-500 mt-1">
-                  Выбранный алгоритм не учитывает стоимость рёбер. Для
-                  минимизации затрат используйте{" "}
+                  Выбранный алгоритм оптимизирует только поток. Для минимизации
+                  затрат используйте{" "}
                   <span className="font-medium text-emerald-600">
                     Min-Cost Flow
                   </span>
@@ -434,7 +434,7 @@ function AlgorithmSettings({
                 </p>
                 <p className="text-emerald-600 mt-1">
                   Алгоритм найдёт максимальный поток с минимальной общей
-                  стоимостью. Укажите стоимость для каждого ребра.
+                  стоимостью.
                 </p>
               </>
             ) : (
@@ -443,8 +443,8 @@ function AlgorithmSettings({
                   Только максимальный поток
                 </p>
                 <p className="text-gray-500 mt-1">
-                  Этот алгоритм находит максимальный поток без учёта стоимости.
-                  Для оптимизации затрат выберите Min-Cost Flow.
+                  Стоимость рёбер сохраняется, но не влияет на результат.
+                  Переключитесь на Min-Cost Flow для оптимизации затрат.
                 </p>
               </>
             )}
@@ -633,7 +633,7 @@ export default function NetworkEditor() {
     [addNode, nodes.length, sourceId, sinkId, setSourceSink, clearSolution],
   );
 
-  // Добавление ребра
+  // Добавление ребра - всегда сохраняем cost
   const handleAddEdge = useCallback(
     (from: bigint, to: bigint, capacity: number, cost: number) => {
       const edge = addEdge({ from, to, capacity, cost });
@@ -717,7 +717,7 @@ export default function NetworkEditor() {
     input.click();
   };
 
-  // Создание примера
+  // Создание примера - всегда добавляем стоимость
   const handleCreateExample = () => {
     clearGraph();
     const source = addNode({
@@ -758,69 +758,17 @@ export default function NetworkEditor() {
     });
     const sink = addNode({ x: 9, y: 3, type: NodeType.SINK, name: "Сток" });
 
-    // Стоимость добавляем только если алгоритм поддерживает
-    const costMultiplier = supportsCost ? 1 : 0;
-
-    addEdge({
-      from: source.id,
-      to: w1.id,
-      capacity: 15,
-      cost: 2 * costMultiplier,
-    });
-    addEdge({
-      from: source.id,
-      to: w2.id,
-      capacity: 12,
-      cost: 3 * costMultiplier,
-    });
-    addEdge({
-      from: w1.id,
-      to: inter.id,
-      capacity: 10,
-      cost: 1 * costMultiplier,
-    });
-    addEdge({
-      from: w2.id,
-      to: inter.id,
-      capacity: 8,
-      cost: 2 * costMultiplier,
-    });
-    addEdge({
-      from: w1.id,
-      to: d1.id,
-      capacity: 7,
-      cost: 4 * costMultiplier,
-    });
-    addEdge({
-      from: inter.id,
-      to: d1.id,
-      capacity: 5,
-      cost: 1 * costMultiplier,
-    });
-    addEdge({
-      from: inter.id,
-      to: d2.id,
-      capacity: 6,
-      cost: 2 * costMultiplier,
-    });
-    addEdge({
-      from: w2.id,
-      to: d2.id,
-      capacity: 9,
-      cost: 3 * costMultiplier,
-    });
-    addEdge({
-      from: d1.id,
-      to: sink.id,
-      capacity: 12,
-      cost: 1 * costMultiplier,
-    });
-    addEdge({
-      from: d2.id,
-      to: sink.id,
-      capacity: 14,
-      cost: 1 * costMultiplier,
-    });
+    // Всегда добавляем стоимость - она просто не будет учитываться для других алгоритмов
+    addEdge({ from: source.id, to: w1.id, capacity: 15, cost: 2 });
+    addEdge({ from: source.id, to: w2.id, capacity: 12, cost: 3 });
+    addEdge({ from: w1.id, to: inter.id, capacity: 10, cost: 1 });
+    addEdge({ from: w2.id, to: inter.id, capacity: 8, cost: 2 });
+    addEdge({ from: w1.id, to: d1.id, capacity: 7, cost: 4 });
+    addEdge({ from: inter.id, to: d1.id, capacity: 5, cost: 1 });
+    addEdge({ from: inter.id, to: d2.id, capacity: 6, cost: 2 });
+    addEdge({ from: w2.id, to: d2.id, capacity: 9, cost: 3 });
+    addEdge({ from: d1.id, to: sink.id, capacity: 12, cost: 1 });
+    addEdge({ from: d2.id, to: sink.id, capacity: 14, cost: 1 });
 
     setSourceSink(source.id, sink.id);
     setName("Пример логистической сети");
@@ -1051,7 +999,7 @@ export default function NetworkEditor() {
               min={0}
             />
 
-            {/* Стоимость только для Min-Cost Flow */}
+            {/* Стоимость - показываем только для Min-Cost Flow, но данные всегда есть */}
             {supportsCost ? (
               <Input
                 label="Стоимость"
@@ -1067,9 +1015,13 @@ export default function NetworkEditor() {
                 className="mt-3"
               />
             ) : (
-              <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-500">
-                <InformationCircleIcon className="w-4 h-4 inline mr-1" />
-                Стоимость доступна только для Min-Cost Flow
+              <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-500 flex items-start gap-2">
+                <InformationCircleIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  Стоимость ({selectedEdge.cost ?? 0}) сохранена, но не
+                  учитывается текущим алгоритмом. Используйте Min-Cost Flow для
+                  оптимизации затрат.
+                </span>
               </div>
             )}
 
@@ -1094,7 +1046,7 @@ export default function NetworkEditor() {
                   {flowResult.maxFlow}
                 </span>
               </div>
-              {/* Стоимость показываем только если она есть и алгоритм поддерживает */}
+              {/* Стоимость показываем только для Min-Cost Flow */}
               {supportsCost && flowResult.totalCost > 0 && (
                 <div className="flex justify-between">
                   <span className="text-gray-600">Мин. стоимость:</span>

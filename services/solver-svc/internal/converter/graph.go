@@ -2,10 +2,10 @@
 // representations and the internal residual graph structures used by flow algorithms.
 //
 // The package handles:
-//   - Converting proto Graph messages to ResidualGraph for algorithm execution
-//   - Converting algorithm results back to proto format for API responses
-//   - Computing graph statistics and metrics
-//   - Filtering and selecting edges based on various criteria
+// - Converting proto Graph messages to ResidualGraph for algorithm execution
+// - Converting algorithm results back to proto format for API responses
+// - Computing graph statistics and metrics
+// - Filtering and selecting edges based on various criteria
 //
 // Thread Safety:
 // All functions in this package are stateless and thread-safe. The returned
@@ -43,16 +43,16 @@ type PathWithFlow struct {
 // structure suitable for flow algorithm execution.
 //
 // The conversion process:
-//  1. Creates a new ResidualGraph
-//  2. Adds all nodes from the proto graph
-//  3. Adds edges with their reverse edges for residual capacity tracking
-//  4. Handles bidirectional edges by adding both directions
+// 1. Creates a new ResidualGraph
+// 2. Adds all nodes from the proto graph
+// 3. Adds edges with their reverse edges for residual capacity tracking
+// 4. Handles bidirectional edges by adding both directions
 //
 // Parameters:
-//   - protoGraph: The protobuf Graph message to convert
+// - protoGraph: The protobuf Graph message to convert
 //
 // Returns:
-//   - A new ResidualGraph ready for algorithm execution
+// - A new ResidualGraph ready for algorithm execution
 //
 // Example:
 //
@@ -80,6 +80,64 @@ func ToResidualGraph(protoGraph *commonv1.Graph) *graph.ResidualGraph {
 }
 
 // =============================================================================
+// Flow Calculation Helpers
+// =============================================================================
+
+// GetNetFlow calculates the net flow on a forward edge.
+//
+// In a residual graph, the net flow is the difference between the original
+// capacity and the current remaining capacity:
+//
+//	NetFlow = OriginalCapacity - RemainingCapacity
+//
+// This correctly accounts for flow that was "cancelled" by pushing flow
+// through reverse edges. For example:
+//   - Push 5 units through edge A→B: capacity becomes 0, net flow = 5
+//   - Push 1 unit through reverse edge B→A: capacity becomes 1, net flow = 4
+//
+// Parameters:
+// - edge: The residual edge to calculate flow for
+//
+// Returns:
+// - The net flow on the edge (always >= 0)
+func GetNetFlow(edge *graph.ResidualEdge) float64 {
+	if edge == nil || edge.IsReverse {
+		return 0
+	}
+
+	netFlow := edge.OriginalCapacity - edge.Capacity
+	if netFlow < 0 {
+		netFlow = 0
+	}
+
+	return netFlow
+}
+
+// GetUtilization calculates the utilization ratio for an edge.
+//
+// Utilization = NetFlow / OriginalCapacity
+//
+// Returns a value in the range [0.0, 1.0].
+func GetUtilization(edge *graph.ResidualEdge) float64 {
+	if edge == nil || edge.IsReverse || edge.OriginalCapacity <= graph.Epsilon {
+		return 0
+	}
+
+	netFlow := GetNetFlow(edge)
+	utilization := netFlow / edge.OriginalCapacity
+
+	// Clamp to valid range (shouldn't be needed, but safety first)
+	if utilization > 1.0 {
+		utilization = 1.0
+	}
+	if utilization < 0.0 {
+		utilization = 0.0
+	}
+
+	return utilization
+}
+
+// =============================================================================
 // Path Conversion
 // =============================================================================
 
@@ -89,11 +147,11 @@ func ToResidualGraph(protoGraph *commonv1.Graph) *graph.ResidualGraph {
 // The cost for each path is computed as: sum of edge costs * path flow.
 //
 // Parameters:
-//   - paths: Slice of internal path representations
-//   - rg: The residual graph (used to look up edge costs)
+// - paths: Slice of internal path representations
+// - rg: The residual graph (used to look up edge costs)
 //
 // Returns:
-//   - Slice of protobuf Path messages
+// - Slice of protobuf Path messages
 //
 // Note: Paths with fewer than 2 nodes are filtered out as invalid.
 func ToPaths(paths []PathWithFlow, rg *graph.ResidualGraph) []*commonv1.Path {
@@ -124,11 +182,11 @@ func ToPaths(paths []PathWithFlow, rg *graph.ResidualGraph) []*commonv1.Path {
 // This is useful when you have path sequences but haven't tracked flow values.
 //
 // Parameters:
-//   - paths: Slice of node ID sequences
-//   - rg: The residual graph
+// - paths: Slice of node ID sequences
+// - rg: The residual graph
 //
 // Returns:
-//   - Slice of protobuf Path messages with computed flows
+// - Slice of protobuf Path messages with computed flows
 func ToPathsFromNodeIDs(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Path {
 	result := make([]*commonv1.Path, 0, len(paths))
 
@@ -152,17 +210,17 @@ func ToPathsFromNodeIDs(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Pa
 }
 
 // ToPathsWithFlowReconstruction reconstructs path flows from edge flow values.
-// The flow for each path is the minimum edge flow along the path.
+// The flow for each path is the minimum net flow along the path.
 //
 // This is useful when paths were recorded during execution but flow values
 // need to be recomputed from the final graph state.
 //
 // Parameters:
-//   - paths: Slice of node ID sequences
-//   - rg: The residual graph with flow values
+// - paths: Slice of node ID sequences
+// - rg: The residual graph with flow values
 //
 // Returns:
-//   - Slice of protobuf Path messages
+// - Slice of protobuf Path messages
 func ToPathsWithFlowReconstruction(paths [][]int64, rg *graph.ResidualGraph) []*commonv1.Path {
 	result := make([]*commonv1.Path, 0, len(paths))
 
@@ -171,7 +229,7 @@ func ToPathsWithFlowReconstruction(paths [][]int64, rg *graph.ResidualGraph) []*
 			continue
 		}
 
-		// Find minimum flow along the path
+		// Find minimum net flow along the path
 		minFlow := graph.Infinity
 		for i := 0; i < len(nodeIDs)-1; i++ {
 			edge := rg.GetEdge(nodeIDs[i], nodeIDs[i+1])
@@ -179,8 +237,11 @@ func ToPathsWithFlowReconstruction(paths [][]int64, rg *graph.ResidualGraph) []*
 				minFlow = 0
 				break
 			}
-			if edge.Flow < minFlow {
-				minFlow = edge.Flow
+
+			// Use net flow calculation
+			netFlow := GetNetFlow(edge)
+			if netFlow < minFlow {
+				minFlow = netFlow
 			}
 		}
 
@@ -252,22 +313,28 @@ func DefaultFlowEdgeOptions() *FlowEdgeOptions {
 // The edges are returned in deterministic order (sorted by from node, then to node).
 //
 // Parameters:
-//   - rg: The residual graph with flow values
+// - rg: The residual graph with flow values
 //
 // Returns:
-//   - Slice of protobuf FlowEdge messages
+// - Slice of protobuf FlowEdge messages
 func ToFlowEdges(rg *graph.ResidualGraph) []*commonv1.FlowEdge {
 	return ToFlowEdgesWithOptions(rg, DefaultFlowEdgeOptions())
 }
 
 // ToFlowEdgesWithOptions converts edges with custom filtering options.
 //
+// For forward edges, the actual flow is calculated as:
+//
+//	NetFlow = OriginalCapacity - CurrentResidualCapacity
+//
+// This correctly handles cases where flow was "cancelled" by using reverse edges.
+//
 // Parameters:
-//   - rg: The residual graph
-//   - opts: Options controlling which edges to include
+// - rg: The residual graph
+// - opts: Options controlling which edges to include
 //
 // Returns:
-//   - Filtered slice of protobuf FlowEdge messages in deterministic order
+// - Filtered slice of protobuf FlowEdge messages in deterministic order
 func ToFlowEdgesWithOptions(rg *graph.ResidualGraph, opts *FlowEdgeOptions) []*commonv1.FlowEdge {
 	if opts == nil {
 		opts = DefaultFlowEdgeOptions()
@@ -281,25 +348,43 @@ func ToFlowEdgesWithOptions(rg *graph.ResidualGraph, opts *FlowEdgeOptions) []*c
 		// Use EdgesList which maintains insertion order
 		edges := rg.GetNeighborsList(from)
 		for _, edge := range edges {
-			// Apply filters
+			// Skip reverse edges unless explicitly requested
 			if edge.IsReverse && !opts.IncludeReverseEdge {
 				continue
 			}
 
-			if edge.Flow < opts.MinFlowThreshold && !opts.IncludeZeroFlow {
+			// Calculate net flow for forward edges
+			// NetFlow = OriginalCapacity - RemainingCapacity
+			var netFlow float64
+			if edge.IsReverse {
+				// For reverse edges, flow represents capacity available to "cancel"
+				netFlow = edge.Capacity
+			} else {
+				netFlow = GetNetFlow(edge)
+			}
+
+			// Apply flow threshold filter
+			if netFlow < opts.MinFlowThreshold && !opts.IncludeZeroFlow {
 				continue
 			}
 
-			// Compute utilization ratio
+			// Compute utilization ratio based on net flow
 			utilization := 0.0
-			if edge.OriginalCapacity > 0 {
-				utilization = edge.Flow / edge.OriginalCapacity
+			if !edge.IsReverse && edge.OriginalCapacity > graph.Epsilon {
+				utilization = netFlow / edge.OriginalCapacity
+				// Clamp to valid range [0, 1]
+				if utilization > 1.0 {
+					utilization = 1.0
+				}
+				if utilization < 0.0 {
+					utilization = 0.0
+				}
 			}
 
 			result = append(result, &commonv1.FlowEdge{
 				From:        from,
 				To:          edge.To,
-				Flow:        edge.Flow,
+				Flow:        netFlow,
 				Capacity:    edge.OriginalCapacity,
 				Cost:        edge.Cost,
 				Utilization: utilization,
@@ -344,11 +429,11 @@ type EdgeFilter func(from int64, edge *graph.ResidualEdge) bool
 // Edges are returned in deterministic order.
 //
 // Parameters:
-//   - rg: The residual graph
-//   - filter: Function to determine if each edge should be included
+// - rg: The residual graph
+// - filter: Function to determine if each edge should be included
 //
 // Returns:
-//   - Filtered slice of protobuf FlowEdge messages
+// - Filtered slice of protobuf FlowEdge messages
 func ToFlowEdgesFiltered(rg *graph.ResidualGraph, filter EdgeFilter) []*commonv1.FlowEdge {
 	var result []*commonv1.FlowEdge
 
@@ -360,15 +445,14 @@ func ToFlowEdgesFiltered(rg *graph.ResidualGraph, filter EdgeFilter) []*commonv1
 				continue
 			}
 
-			utilization := 0.0
-			if edge.OriginalCapacity > 0 {
-				utilization = edge.Flow / edge.OriginalCapacity
-			}
+			// Calculate net flow
+			netFlow := GetNetFlow(edge)
+			utilization := GetUtilization(edge)
 
 			result = append(result, &commonv1.FlowEdge{
 				From:        from,
 				To:          edge.To,
-				Flow:        edge.Flow,
+				Flow:        netFlow,
 				Capacity:    edge.OriginalCapacity,
 				Cost:        edge.Cost,
 				Utilization: utilization,
@@ -379,17 +463,21 @@ func ToFlowEdgesFiltered(rg *graph.ResidualGraph, filter EdgeFilter) []*commonv1
 	return result
 }
 
-// FilterActiveEdges returns a filter that selects only forward edges with positive flow.
+// FilterActiveEdges returns a filter that selects only forward edges with positive net flow.
 func FilterActiveEdges() EdgeFilter {
 	return func(from int64, edge *graph.ResidualEdge) bool {
-		return !edge.IsReverse && edge.Flow > graph.Epsilon
+		if edge.IsReverse {
+			return false
+		}
+		netFlow := GetNetFlow(edge)
+		return netFlow > graph.Epsilon
 	}
 }
 
 // FilterHighUtilization returns a filter that selects edges with utilization >= threshold.
 //
 // Parameters:
-//   - threshold: Minimum utilization ratio (0.0 to 1.0)
+// - threshold: Minimum utilization ratio (0.0 to 1.0)
 //
 // Example:
 //
@@ -398,10 +486,10 @@ func FilterActiveEdges() EdgeFilter {
 //	edges := ToFlowEdgesFiltered(rg, filter)
 func FilterHighUtilization(threshold float64) EdgeFilter {
 	return func(from int64, edge *graph.ResidualEdge) bool {
-		if edge.IsReverse || edge.OriginalCapacity <= 0 {
+		if edge.IsReverse {
 			return false
 		}
-		utilization := edge.Flow / edge.OriginalCapacity
+		utilization := GetUtilization(edge)
 		return utilization >= threshold
 	}
 }
@@ -415,7 +503,7 @@ func FilterSaturatedEdges() EdgeFilter {
 // FilterByNodes returns a filter that selects edges between specified nodes.
 //
 // Parameters:
-//   - nodes: Map of node IDs to include (both endpoints must be in the map)
+// - nodes: Map of node IDs to include (both endpoints must be in the map)
 func FilterByNodes(nodes map[int64]bool) EdgeFilter {
 	return func(from int64, edge *graph.ResidualEdge) bool {
 		if edge.IsReverse {
@@ -434,12 +522,18 @@ func FilterByNodes(nodes map[int64]bool) EdgeFilter {
 //
 // This is useful for returning the modified graph state to clients.
 //
+// The flow on each edge is calculated as:
+//
+//	NetFlow = OriginalCapacity - RemainingCapacity
+//
+// This correctly handles flow cancellation via reverse edges.
+//
 // Parameters:
-//   - protoGraph: Original protobuf graph
-//   - rg: Residual graph with computed flow values
+// - protoGraph: Original protobuf graph
+// - rg: Residual graph with computed flow values
 //
 // Returns:
-//   - New protobuf Graph with CurrentFlow fields populated
+// - New protobuf Graph with CurrentFlow fields populated
 func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *commonv1.Graph {
 	result := &commonv1.Graph{
 		Nodes:    protoGraph.Nodes,
@@ -461,9 +555,9 @@ func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *c
 			Bidirectional: edge.Bidirectional,
 		}
 
-		// Populate flow from residual graph
+		// Populate net flow from residual graph
 		if re := rg.GetEdge(edge.From, edge.To); re != nil {
-			newEdge.CurrentFlow = re.Flow
+			newEdge.CurrentFlow = GetNetFlow(re)
 		}
 
 		result.Edges[i] = newEdge
@@ -479,16 +573,16 @@ func UpdateGraphWithFlow(protoGraph *commonv1.Graph, rg *graph.ResidualGraph) *c
 // CalculateGraphStatistics computes various metrics about the graph structure.
 //
 // Computed metrics include:
-//   - Node and edge counts
-//   - Warehouse and delivery point counts (by node type)
-//   - Total and average capacity/length
-//   - Graph density
+// - Node and edge counts
+// - Warehouse and delivery point counts (by node type)
+// - Total and average capacity/length
+// - Graph density
 //
 // Parameters:
-//   - protoGraph: The protobuf graph to analyze
+// - protoGraph: The protobuf graph to analyze
 //
 // Returns:
-//   - GraphStatistics message with computed metrics
+// - GraphStatistics message with computed metrics
 func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatistics {
 	var warehouseCount, deliveryPointCount int64
 	var totalCapacity, totalLength float64
@@ -536,6 +630,85 @@ func CalculateGraphStatistics(protoGraph *commonv1.Graph) *commonv1.GraphStatist
 		IsConnected:        true, // TODO: implement actual connectivity check
 		Density:            density,
 	}
+}
+
+// =============================================================================
+// Flow Statistics
+// =============================================================================
+
+// FlowStatistics contains computed statistics about the flow solution.
+type FlowStatistics struct {
+	// TotalFlow is the total flow from source to sink
+	TotalFlow float64
+
+	// TotalCost is the sum of flow * cost for all edges
+	TotalCost float64
+
+	// SaturatedEdges is the count of edges at full capacity
+	SaturatedEdges int
+
+	// ActiveEdges is the count of edges with positive flow
+	ActiveEdges int
+
+	// AverageUtilization is the mean utilization across all edges with capacity
+	AverageUtilization float64
+}
+
+// CalculateFlowStatistics computes statistics about the current flow solution.
+//
+// Parameters:
+// - rg: The residual graph with computed flow
+// - source: The source node ID
+//
+// Returns:
+// - FlowStatistics with computed metrics
+func CalculateFlowStatistics(rg *graph.ResidualGraph, source int64) *FlowStatistics {
+	stats := &FlowStatistics{}
+
+	// Calculate total flow from source
+	stats.TotalFlow = rg.GetTotalFlow(source)
+
+	var totalUtilization float64
+	var edgesWithCapacity int
+
+	nodes := rg.GetSortedNodes()
+	for _, from := range nodes {
+		edges := rg.GetNeighborsList(from)
+		for _, edge := range edges {
+			if edge.IsReverse {
+				continue
+			}
+
+			netFlow := GetNetFlow(edge)
+			utilization := GetUtilization(edge)
+
+			// Accumulate cost
+			stats.TotalCost += netFlow * edge.Cost
+
+			// Count active edges
+			if netFlow > graph.Epsilon {
+				stats.ActiveEdges++
+			}
+
+			// Count saturated edges
+			if utilization >= 1.0-graph.Epsilon {
+				stats.SaturatedEdges++
+			}
+
+			// Accumulate for average utilization
+			if edge.OriginalCapacity > graph.Epsilon {
+				totalUtilization += utilization
+				edgesWithCapacity++
+			}
+		}
+	}
+
+	// Calculate average utilization
+	if edgesWithCapacity > 0 {
+		stats.AverageUtilization = totalUtilization / float64(edgesWithCapacity)
+	}
+
+	return stats
 }
 
 // =============================================================================

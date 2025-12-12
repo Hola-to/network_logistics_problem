@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -972,27 +973,13 @@ func TestSolverService_Solve_ParallelEdges(t *testing.T) {
 	}
 }
 
-// Вспомогательные моки для тестов кэша
+// =============================================================================
+// Thread-safe mock cache
+// =============================================================================
 
-type mockSolverCache struct {
-	getResult *cache.CachedSolveResult
-	getFound  bool
-	getError  error
-	setError  error
-	setCalled bool
-}
-
-func (m *mockSolverCache) Get(ctx context.Context, g *commonv1.Graph, algo commonv1.Algorithm) (*cache.CachedSolveResult, bool, error) {
-	return m.getResult, m.getFound, m.getError
-}
-
-func (m *mockSolverCache) SetFromResponse(ctx context.Context, g *commonv1.Graph, algo commonv1.Algorithm, resp *optimizationv1.SolveResponse, ttl time.Duration) error {
-	m.setCalled = true
-	return m.setError
-}
-
-// Мок для интерфейса cache.Cache
+// mockCache implements cache.Cache interface with thread-safety
 type mockCache struct {
+	mu        sync.RWMutex
 	data      map[string][]byte
 	getError  error
 	setError  error
@@ -1007,6 +994,9 @@ func newMockCache() *mockCache {
 }
 
 func (m *mockCache) Get(ctx context.Context, key string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if m.getError != nil {
 		return nil, m.getError
 	}
@@ -1020,6 +1010,9 @@ func (m *mockCache) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (m *mockCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.setError != nil {
 		return m.setError
 	}
@@ -1028,16 +1021,25 @@ func (m *mockCache) Set(ctx context.Context, key string, value []byte, ttl time.
 }
 
 func (m *mockCache) Delete(ctx context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	delete(m.data, key)
 	return nil
 }
 
 func (m *mockCache) Exists(ctx context.Context, key string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	_, ok := m.data[key]
 	return ok, nil
 }
 
 func (m *mockCache) GetWithTTL(ctx context.Context, key string) ([]byte, time.Duration, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if m.getError != nil {
 		return nil, 0, m.getError
 	}
@@ -1051,6 +1053,9 @@ func (m *mockCache) GetWithTTL(ctx context.Context, key string) ([]byte, time.Du
 }
 
 func (m *mockCache) MGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	result := make(map[string][]byte)
 	for _, key := range keys {
 		if data, ok := m.data[key]; ok {
@@ -1061,6 +1066,9 @@ func (m *mockCache) MGet(ctx context.Context, keys []string) (map[string][]byte,
 }
 
 func (m *mockCache) MSet(ctx context.Context, entries map[string][]byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.setError != nil {
 		return m.setError
 	}
@@ -1071,6 +1079,9 @@ func (m *mockCache) MSet(ctx context.Context, entries map[string][]byte, ttl tim
 }
 
 func (m *mockCache) MDelete(ctx context.Context, keys []string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var count int64
 	for _, key := range keys {
 		if _, ok := m.data[key]; ok {
@@ -1082,6 +1093,9 @@ func (m *mockCache) MDelete(ctx context.Context, keys []string) (int64, error) {
 }
 
 func (m *mockCache) Keys(ctx context.Context, pattern string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var keys []string
 	for key := range m.data {
 		keys = append(keys, key)
@@ -1090,13 +1104,18 @@ func (m *mockCache) Keys(ctx context.Context, pattern string) ([]string, error) 
 }
 
 func (m *mockCache) DeleteByPattern(ctx context.Context, pattern string) (int64, error) {
-	// Простая реализация - удаляем всё
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	count := int64(len(m.data))
 	m.data = make(map[string][]byte)
 	return count, nil
 }
 
 func (m *mockCache) Stats(ctx context.Context) (*cache.Stats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	return &cache.Stats{
 		TotalKeys: int64(len(m.data)),
 		Backend:   "mock",
@@ -1104,6 +1123,9 @@ func (m *mockCache) Stats(ctx context.Context) (*cache.Stats, error) {
 }
 
 func (m *mockCache) Clear(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.data = make(map[string][]byte)
 	return nil
 }
@@ -1111,6 +1133,17 @@ func (m *mockCache) Clear(ctx context.Context) error {
 func (m *mockCache) Close() error {
 	return nil
 }
+
+// Len returns the number of entries in the cache (thread-safe)
+func (m *mockCache) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.data)
+}
+
+// =============================================================================
+// Cache tests
+// =============================================================================
 
 func TestSolverService_Solve_WithCache_Hit(t *testing.T) {
 	// Создаём кэшированный результат
@@ -1169,8 +1202,9 @@ func TestSolverService_Solve_WithCache_Miss(t *testing.T) {
 	assert.True(t, resp.Success)
 	assert.Equal(t, 10.0, resp.Result.MaxFlow)
 
+	// Use thread-safe Len() method instead of direct map access
 	assert.Eventually(t, func() bool {
-		return len(mockC.data) > 0
+		return mockC.Len() > 0
 	}, time.Second, 10*time.Millisecond, "Cache Set should be called on miss")
 }
 
@@ -1630,21 +1664,21 @@ func TestSolverService_OptionsValidation(t *testing.T) {
 }
 
 func TestMemStatsCache_Refresh(t *testing.T) {
-	cache := newMemStatsCache(10 * time.Millisecond)
+	c := newMemStatsCache(10 * time.Millisecond)
 
 	// First read forces refresh
-	alloc1 := cache.get()
+	alloc1 := c.get()
 	assert.Greater(t, alloc1, uint64(0))
 
 	// Immediate second read should be cached
-	alloc2 := cache.get()
+	alloc2 := c.get()
 	assert.Equal(t, alloc1, alloc2)
 
 	// Wait for cache to expire
 	time.Sleep(15 * time.Millisecond)
 
 	// Should refresh now
-	alloc3 := cache.get()
+	alloc3 := c.get()
 	// May or may not be equal depending on GC, but should not be 0
 	assert.Greater(t, alloc3, uint64(0))
 }
@@ -1652,12 +1686,12 @@ func TestMemStatsCache_Refresh(t *testing.T) {
 func TestProgressTracker(t *testing.T) {
 	// Simple test for progress tracker fields
 	start := time.Now()
-	cache := newMemStatsCache(time.Second)
+	c := newMemStatsCache(time.Second)
 	tracker := &progressTracker{
 		stream:        nil,
 		start:         start,
 		lastSendTime:  start,
-		memStatsCache: cache,
+		memStatsCache: c,
 	}
 
 	assert.Equal(t, start, tracker.start)
