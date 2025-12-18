@@ -158,6 +158,10 @@ type ResidualGraph struct {
 	// This ensures algorithms produce the same results on every run.
 	EdgesList map[int64][]*ResidualEdge
 
+	//IncomingCache provides cache for EdgesList
+	IncomingEdgesListCache map[int64][]IncomingEdge
+	incomingCacheDirty     bool
+
 	// ReverseEdges enables efficient reverse graph traversal.
 	// ReverseEdges[to][from] points to the edge from 'from' to 'to'.
 	ReverseEdges map[int64]map[int64]*ResidualEdge
@@ -177,11 +181,13 @@ type ResidualGraph struct {
 // and edges with AddEdgeWithReverse().
 func NewResidualGraph() *ResidualGraph {
 	return &ResidualGraph{
-		Nodes:            make(map[int64]bool),
-		Edges:            make(map[int64]map[int64]*ResidualEdge),
-		EdgesList:        make(map[int64][]*ResidualEdge),
-		ReverseEdges:     make(map[int64]map[int64]*ResidualEdge),
-		sortedNodesDirty: true,
+		Nodes:                  make(map[int64]bool),
+		Edges:                  make(map[int64]map[int64]*ResidualEdge),
+		EdgesList:              make(map[int64][]*ResidualEdge),
+		ReverseEdges:           make(map[int64]map[int64]*ResidualEdge),
+		IncomingEdgesListCache: make(map[int64][]IncomingEdge),
+		incomingCacheDirty:     true,
+		sortedNodesDirty:       true,
 	}
 }
 
@@ -207,6 +213,10 @@ func (rg *ResidualGraph) Clear() {
 		clear(rg.ReverseEdges[k])
 		delete(rg.ReverseEdges, k)
 	}
+	for k := range rg.IncomingEdgesListCache {
+		delete(rg.IncomingEdgesListCache, k)
+	}
+	rg.incomingCacheDirty = true
 
 	rg.sortedNodesMu.Lock()
 	rg.sortedNodes = rg.sortedNodes[:0]
@@ -240,6 +250,11 @@ func (rg *ResidualGraph) markSortedNodesDirty() {
 	rg.sortedNodesMu.Lock()
 	rg.sortedNodesDirty = true
 	rg.sortedNodesMu.Unlock()
+}
+
+// invalidateIncomingCache invalidates the incoming edges cache.
+func (rg *ResidualGraph) invalidateIncomingCache() {
+	rg.incomingCacheDirty = true
 }
 
 // AddEdge adds a forward edge to the graph.
@@ -324,6 +339,12 @@ func (rg *ResidualGraph) AddReverseEdge(from, to int64, cost float64) {
 		IsReverse:        true,
 		Index:            len(rg.EdgesList[from]),
 	}
+
+	if rg.ReverseEdges[to] == nil {
+		rg.ReverseEdges[to] = make(map[int64]*ResidualEdge)
+	}
+	rg.ReverseEdges[to][from] = edge
+	rg.incomingCacheDirty = true
 
 	rg.Edges[from][to] = edge
 	rg.EdgesList[from] = append(rg.EdgesList[from], edge)
@@ -767,4 +788,45 @@ func (sg *SafeResidualGraph) ClonePooled(pool *GraphPool) *ResidualGraph {
 	sg.mu.RLock()
 	defer sg.mu.RUnlock()
 	return sg.graph.CloneToPooled(pool)
+}
+
+// BuildIncomingEdgesCache clears the old cache and builds a new one.
+func (rg *ResidualGraph) BuildIncomingEdgesCache() {
+	if !rg.incomingCacheDirty {
+		return
+	}
+
+	// Clear old cache
+	for k := range rg.IncomingEdgesListCache {
+		delete(rg.IncomingEdgesListCache, k)
+	}
+
+	// Build new cache
+	for to, incoming := range rg.ReverseEdges {
+		if len(incoming) == 0 {
+			continue
+		}
+
+		list := make([]IncomingEdge, 0, len(incoming))
+		for from, edge := range incoming {
+			list = append(list, IncomingEdge{From: from, Edge: edge})
+		}
+
+		// Sort for determinism
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].From < list[j].From
+		})
+
+		rg.IncomingEdgesListCache[to] = list
+	}
+
+	rg.incomingCacheDirty = false
+}
+
+// GetIncomingEdgesListCached returns a cached list of incoming edges
+func (rg *ResidualGraph) GetIncomingEdgesListCached(to int64) []IncomingEdge {
+	if rg.incomingCacheDirty {
+		rg.BuildIncomingEdgesCache()
+	}
+	return rg.IncomingEdgesListCache[to]
 }

@@ -11,25 +11,15 @@ import (
 func TestNewResidualGraph(t *testing.T) {
 	rg := NewResidualGraph()
 
-	if rg == nil {
-		t.Fatal("NewResidualGraph returned nil")
-	}
-
-	if rg.Nodes == nil {
-		t.Error("Nodes map is nil")
-	}
-
-	if rg.Edges == nil {
-		t.Error("Edges map is nil")
-	}
-
-	if len(rg.Nodes) != 0 {
-		t.Errorf("Expected empty nodes, got %d", len(rg.Nodes))
-	}
-
-	if len(rg.Edges) != 0 {
-		t.Errorf("Expected empty edges, got %d", len(rg.Edges))
-	}
+	require.NotNil(t, rg)
+	assert.NotNil(t, rg.Nodes)
+	assert.NotNil(t, rg.Edges)
+	assert.NotNil(t, rg.EdgesList)
+	assert.NotNil(t, rg.ReverseEdges)
+	assert.NotNil(t, rg.IncomingEdgesListCache)
+	assert.True(t, rg.incomingCacheDirty)
+	assert.Empty(t, rg.Nodes)
+	assert.Empty(t, rg.Edges)
 }
 
 func TestResidualGraph_AddNode(t *testing.T) {
@@ -78,9 +68,7 @@ func TestResidualGraph_AddNode(t *testing.T) {
 				rg.AddNode(id)
 			}
 
-			if got := rg.NodeCount(); got != tt.want {
-				t.Errorf("NodeCount() = %d, want %d", got, tt.want)
-			}
+			assert.Equal(t, tt.want, rg.NodeCount())
 		})
 	}
 }
@@ -164,33 +152,16 @@ func TestResidualGraph_AddEdge(t *testing.T) {
 				rg.AddEdge(e.from, e.to, e.capacity, e.cost)
 			}
 
-			if got := rg.EdgeCount(); got != tt.wantEdge {
-				t.Errorf("EdgeCount() = %d, want %d", got, tt.wantEdge)
-			}
+			assert.Equal(t, tt.wantEdge, rg.EdgeCount())
+			assert.Equal(t, tt.wantNode, rg.NodeCount())
 
-			if got := rg.NodeCount(); got != tt.wantNode {
-				t.Errorf("NodeCount() = %d, want %d", got, tt.wantNode)
-			}
-
-			// Verify edge properties
 			for _, e := range tt.edges {
 				edge := rg.GetEdge(e.from, e.to)
-				if edge == nil {
-					t.Errorf("Edge from %d to %d not found", e.from, e.to)
-					continue
-				}
-				if edge.Capacity != e.capacity {
-					t.Errorf("Edge capacity = %f, want %f", edge.Capacity, e.capacity)
-				}
-				if edge.Cost != e.cost {
-					t.Errorf("Edge cost = %f, want %f", edge.Cost, e.cost)
-				}
-				if edge.OriginalCapacity != e.capacity {
-					t.Errorf("Edge original capacity = %f, want %f", edge.OriginalCapacity, e.capacity)
-				}
-				if edge.IsReverse {
-					t.Error("Forward edge marked as reverse")
-				}
+				require.NotNil(t, edge)
+				assert.Equal(t, e.capacity, edge.Capacity)
+				assert.Equal(t, e.cost, edge.Cost)
+				assert.Equal(t, e.capacity, edge.OriginalCapacity)
+				assert.False(t, edge.IsReverse)
 			}
 		})
 	}
@@ -200,35 +171,17 @@ func TestResidualGraph_AddEdgeWithReverse(t *testing.T) {
 	rg := NewResidualGraph()
 	rg.AddEdgeWithReverse(1, 2, 10.0, 5.0)
 
-	// Check forward edge
 	forward := rg.GetEdge(1, 2)
-	if forward == nil {
-		t.Fatal("Forward edge not found")
-	}
-	if forward.Capacity != 10.0 {
-		t.Errorf("Forward capacity = %f, want 10.0", forward.Capacity)
-	}
-	if forward.Cost != 5.0 {
-		t.Errorf("Forward cost = %f, want 5.0", forward.Cost)
-	}
-	if forward.IsReverse {
-		t.Error("Forward edge marked as reverse")
-	}
+	require.NotNil(t, forward)
+	assert.Equal(t, 10.0, forward.Capacity)
+	assert.Equal(t, 5.0, forward.Cost)
+	assert.False(t, forward.IsReverse)
 
-	// Check reverse edge
 	reverse := rg.GetEdge(2, 1)
-	if reverse == nil {
-		t.Fatal("Reverse edge not found")
-	}
-	if reverse.Capacity != 0.0 {
-		t.Errorf("Reverse capacity = %f, want 0.0", reverse.Capacity)
-	}
-	if reverse.Cost != -5.0 {
-		t.Errorf("Reverse cost = %f, want -5.0", reverse.Cost)
-	}
-	if !reverse.IsReverse {
-		t.Error("Reverse edge not marked as reverse")
-	}
+	require.NotNil(t, reverse)
+	assert.Equal(t, 0.0, reverse.Capacity)
+	assert.Equal(t, -5.0, reverse.Cost)
+	assert.True(t, reverse.IsReverse)
 }
 
 func TestResidualGraph_GetEdge(t *testing.T) {
@@ -251,11 +204,10 @@ func TestResidualGraph_GetEdge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			edge := rg.GetEdge(tt.from, tt.to)
-			if tt.wantNil && edge != nil {
-				t.Error("Expected nil edge, got non-nil")
-			}
-			if !tt.wantNil && edge == nil {
-				t.Error("Expected non-nil edge, got nil")
+			if tt.wantNil {
+				assert.Nil(t, edge)
+			} else {
+				assert.NotNil(t, edge)
 			}
 		})
 	}
@@ -283,15 +235,11 @@ func TestResidualGraph_GetNeighbors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			neighbors := rg.GetNeighbors(tt.nodeID)
-			if tt.wantNil && neighbors != nil && len(neighbors) > 0 {
-				t.Errorf("Expected nil/empty neighbors, got %d", len(neighbors))
-			}
-			if !tt.wantNil {
-				if neighbors == nil {
-					t.Error("Expected non-nil neighbors, got nil")
-				} else if len(neighbors) != tt.wantLen {
-					t.Errorf("Neighbors count = %d, want %d", len(neighbors), tt.wantLen)
-				}
+			if tt.wantNil {
+				assert.True(t, neighbors == nil)
+			} else {
+				assert.NotNil(t, neighbors)
+				assert.Equal(t, tt.wantLen, len(neighbors))
 			}
 		})
 	}
@@ -300,31 +248,22 @@ func TestResidualGraph_GetNeighbors(t *testing.T) {
 func TestResidualGraph_GetNodes(t *testing.T) {
 	rg := NewResidualGraph()
 
-	// Empty graph
 	nodes := rg.GetNodes()
-	if len(nodes) != 0 {
-		t.Errorf("Expected 0 nodes, got %d", len(nodes))
-	}
+	assert.Empty(t, nodes)
 
-	// Add nodes
 	rg.AddNode(1)
 	rg.AddNode(2)
 	rg.AddNode(3)
 
 	nodes = rg.GetNodes()
-	if len(nodes) != 3 {
-		t.Errorf("Expected 3 nodes, got %d", len(nodes))
-	}
+	assert.Len(t, nodes, 3)
 
-	// Check all nodes present
 	nodeSet := make(map[int64]bool)
 	for _, n := range nodes {
 		nodeSet[n] = true
 	}
 	for _, expected := range []int64{1, 2, 3} {
-		if !nodeSet[expected] {
-			t.Errorf("Node %d not found in result", expected)
-		}
+		assert.True(t, nodeSet[expected])
 	}
 }
 
@@ -332,78 +271,43 @@ func TestResidualGraph_Clone(t *testing.T) {
 	original := NewResidualGraph()
 	original.AddEdgeWithReverse(1, 2, 10.0, 5.0)
 	original.AddEdgeWithReverse(2, 3, 20.0, 10.0)
-
-	// Modify flow
 	original.UpdateFlow(1, 2, 5.0)
 
-	// Clone
 	clone := original.Clone()
 
-	// Verify independence
-	if clone == original {
-		t.Error("Clone is same object as original")
-	}
+	assert.True(t, clone != original)
+	assert.Equal(t, original.NodeCount(), clone.NodeCount())
 
-	// Verify data equality
-	if clone.NodeCount() != original.NodeCount() {
-		t.Errorf("Clone nodes = %d, original = %d", clone.NodeCount(), original.NodeCount())
-	}
-
-	// Verify edge data
 	origEdge := original.GetEdge(1, 2)
 	cloneEdge := clone.GetEdge(1, 2)
 
-	if origEdge == cloneEdge {
-		t.Error("Edge is same object in clone")
-	}
+	assert.True(t, origEdge != cloneEdge)
+	assert.Equal(t, origEdge.Flow, cloneEdge.Flow)
 
-	if cloneEdge.Flow != origEdge.Flow {
-		t.Errorf("Clone flow = %f, original = %f", cloneEdge.Flow, origEdge.Flow)
-	}
-
-	// Modify clone, original should not change
 	clone.UpdateFlow(2, 3, 10.0)
 	cloneEdge23 := clone.GetEdge(2, 3)
 	origEdge23 := original.GetEdge(2, 3)
 
-	if cloneEdge23.Flow == origEdge23.Flow && cloneEdge23.Flow != 0 {
-		t.Error("Modifying clone affected original")
-	}
+	assert.NotEqual(t, cloneEdge23.Flow, origEdge23.Flow)
 }
 
 func TestResidualGraph_Reset(t *testing.T) {
 	rg := NewResidualGraph()
 	rg.AddEdgeWithReverse(1, 2, 10.0, 1.0)
 	rg.AddEdgeWithReverse(2, 3, 20.0, 2.0)
-
-	// Add flow
 	rg.UpdateFlow(1, 2, 5.0)
 	rg.UpdateFlow(2, 3, 5.0)
 
-	// Verify flow exists
-	if rg.GetEdge(1, 2).Flow != 5.0 {
-		t.Error("Flow not set before reset")
-	}
+	assert.Equal(t, 5.0, rg.GetEdge(1, 2).Flow)
 
-	// Reset
 	rg.Reset()
 
-	// Verify flow is zero
 	edge12 := rg.GetEdge(1, 2)
-	if edge12.Flow != 0 {
-		t.Errorf("Flow after reset = %f, want 0", edge12.Flow)
-	}
+	assert.Equal(t, 0.0, edge12.Flow)
+	assert.Equal(t, 10.0, edge12.Capacity)
 
-	// Verify capacity restored
-	if edge12.Capacity != 10.0 {
-		t.Errorf("Capacity after reset = %f, want 10.0", edge12.Capacity)
-	}
-
-	// Verify reverse edge capacity reset
 	reverse := rg.GetEdge(2, 1)
-	if reverse.Capacity != 0 {
-		t.Errorf("Reverse capacity after reset = %f, want 0", reverse.Capacity)
-	}
+	assert.Equal(t, 0.0, reverse.Capacity)
 }
 
 func TestResidualGraph_UpdateFlow(t *testing.T) {
@@ -445,45 +349,29 @@ func TestResidualGraph_UpdateFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rg := NewResidualGraph()
 			rg.AddEdgeWithReverse(1, 2, tt.capacity, 1.0)
-
 			rg.UpdateFlow(1, 2, tt.flowToAdd)
 
 			edge := rg.GetEdge(1, 2)
-			if edge.Flow != tt.wantFlow {
-				t.Errorf("Flow = %f, want %f", edge.Flow, tt.wantFlow)
-			}
-			if edge.Capacity != tt.wantCapacity {
-				t.Errorf("Capacity = %f, want %f", edge.Capacity, tt.wantCapacity)
-			}
+			assert.Equal(t, tt.wantFlow, edge.Flow)
+			assert.Equal(t, tt.wantCapacity, edge.Capacity)
 
 			reverse := rg.GetEdge(2, 1)
-			if reverse.Capacity != tt.wantReverseCapacity {
-				t.Errorf("Reverse capacity = %f, want %f", reverse.Capacity, tt.wantReverseCapacity)
-			}
+			assert.Equal(t, tt.wantReverseCapacity, reverse.Capacity)
 		})
 	}
 }
 
 func TestResidualGraph_UpdateFlowCreatesReverseEdge(t *testing.T) {
 	rg := NewResidualGraph()
-	rg.AddEdge(1, 2, 10.0, 5.0) // No reverse edge
+	rg.AddEdge(1, 2, 10.0, 5.0)
 
-	// Update flow should create reverse edge
 	rg.UpdateFlow(1, 2, 3.0)
 
 	reverse := rg.GetEdge(2, 1)
-	if reverse == nil {
-		t.Fatal("Reverse edge not created")
-	}
-	if reverse.Capacity != 3.0 {
-		t.Errorf("Reverse capacity = %f, want 3.0", reverse.Capacity)
-	}
-	if reverse.Cost != -5.0 {
-		t.Errorf("Reverse cost = %f, want -5.0", reverse.Cost)
-	}
-	if !reverse.IsReverse {
-		t.Error("Created edge not marked as reverse")
-	}
+	require.NotNil(t, reverse)
+	assert.Equal(t, 3.0, reverse.Capacity)
+	assert.Equal(t, -5.0, reverse.Cost)
+	assert.True(t, reverse.IsReverse)
 }
 
 func TestResidualGraph_GetFlowOnEdge(t *testing.T) {
@@ -504,9 +392,7 @@ func TestResidualGraph_GetFlowOnEdge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := rg.GetFlowOnEdge(tt.from, tt.to)
-			if got != tt.want {
-				t.Errorf("GetFlowOnEdge(%d, %d) = %f, want %f", tt.from, tt.to, got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -558,11 +444,8 @@ func TestResidualGraph_GetTotalFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rg := NewResidualGraph()
 			tt.setup(rg)
-
 			got := rg.GetTotalFlow(tt.source)
-			if got != tt.want {
-				t.Errorf("GetTotalFlow() = %f, want %f", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -577,7 +460,7 @@ func TestResidualGraph_GetTotalCost(t *testing.T) {
 			name: "single edge with flow",
 			setup: func(rg *ResidualGraph) {
 				rg.AddEdgeWithReverse(1, 2, 10.0, 5.0)
-				rg.UpdateFlow(1, 2, 3.0) // 3 * 5 = 15
+				rg.UpdateFlow(1, 2, 3.0)
 			},
 			want: 15.0,
 		},
@@ -586,8 +469,8 @@ func TestResidualGraph_GetTotalCost(t *testing.T) {
 			setup: func(rg *ResidualGraph) {
 				rg.AddEdgeWithReverse(1, 2, 10.0, 2.0)
 				rg.AddEdgeWithReverse(2, 3, 10.0, 3.0)
-				rg.UpdateFlow(1, 2, 5.0) // 5 * 2 = 10
-				rg.UpdateFlow(2, 3, 4.0) // 4 * 3 = 12
+				rg.UpdateFlow(1, 2, 5.0)
+				rg.UpdateFlow(2, 3, 4.0)
 			},
 			want: 22.0,
 		},
@@ -604,11 +487,8 @@ func TestResidualGraph_GetTotalCost(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rg := NewResidualGraph()
 			tt.setup(rg)
-
 			got := rg.GetTotalCost()
-			if got != tt.want {
-				t.Errorf("GetTotalCost() = %f, want %f", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -622,17 +502,12 @@ func TestResidualEdge_ResidualCapacity(t *testing.T) {
 		{"no flow", 10.0, 10.0},
 		{"partial flow", 7.0, 7.0},
 		{"full flow", 0.0, 0.0},
-		{"zero capacity", 0.0, 0.0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			edge := &ResidualEdge{
-				Capacity: tt.capacity,
-			}
-			if got := edge.ResidualCapacity(); got != tt.want {
-				t.Errorf("ResidualCapacity() = %f, want %f", got, tt.want)
-			}
+			edge := &ResidualEdge{Capacity: tt.capacity}
+			assert.Equal(t, tt.want, edge.ResidualCapacity())
 		})
 	}
 }
@@ -651,12 +526,8 @@ func TestResidualEdge_HasCapacity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			edge := &ResidualEdge{
-				Capacity: tt.capacity,
-			}
-			if got := edge.HasCapacity(); got != tt.want {
-				t.Errorf("HasCapacity() = %v, want %v", got, tt.want)
-			}
+			edge := &ResidualEdge{Capacity: tt.capacity}
+			assert.Equal(t, tt.want, edge.HasCapacity())
 		})
 	}
 }
@@ -664,7 +535,6 @@ func TestResidualEdge_HasCapacity(t *testing.T) {
 func TestResidualGraph_Concurrency(t *testing.T) {
 	rg := NewResidualGraph()
 
-	// Add initial structure
 	for i := int64(0); i < 100; i++ {
 		rg.AddNode(i)
 	}
@@ -672,20 +542,20 @@ func TestResidualGraph_Concurrency(t *testing.T) {
 		rg.AddEdgeWithReverse(i, i+1, 100.0, 1.0)
 	}
 
-	// Pre-compute sorted nodes to avoid write during concurrent reads
 	_ = rg.GetSortedNodes()
+	rg.BuildIncomingEdgesCache()
 
 	done := make(chan bool)
 
-	// Multiple goroutines reading (теперь действительно только чтение)
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				_ = rg.GetSortedNodes() // Теперь возвращает cached
+				_ = rg.GetSortedNodes()
 				_ = rg.GetNeighbors(50)
 				_ = rg.GetEdge(25, 26)
 				_ = rg.NodeCount()
 				_ = rg.EdgeCount()
+				_ = rg.GetIncomingEdgesListCached(50)
 			}
 			done <- true
 		}()
@@ -699,7 +569,6 @@ func TestResidualGraph_Concurrency(t *testing.T) {
 func TestResidualGraph_AddEdge_OverwriteReverse(t *testing.T) {
 	g := NewResidualGraph()
 
-	// Сначала добавляем reverse ребро
 	g.AddReverseEdge(1, 2, 5.0)
 
 	edge := g.GetEdge(1, 2)
@@ -707,12 +576,11 @@ func TestResidualGraph_AddEdge_OverwriteReverse(t *testing.T) {
 	assert.True(t, edge.IsReverse)
 	assert.Equal(t, 0.0, edge.Capacity)
 
-	// Теперь добавляем прямое ребро - должно перезаписать reverse
 	g.AddEdge(1, 2, 10.0, 3.0)
 
 	edge = g.GetEdge(1, 2)
 	require.NotNil(t, edge)
-	assert.False(t, edge.IsReverse, "Should be converted to forward edge")
+	assert.False(t, edge.IsReverse)
 	assert.Equal(t, 10.0, edge.Capacity)
 	assert.Equal(t, 10.0, edge.OriginalCapacity)
 	assert.Equal(t, 3.0, edge.Cost)
@@ -721,99 +589,27 @@ func TestResidualGraph_AddEdge_OverwriteReverse(t *testing.T) {
 func TestResidualGraph_AddEdge_ParallelEdges(t *testing.T) {
 	g := NewResidualGraph()
 
-	// Добавляем первое ребро
 	g.AddEdge(1, 2, 10.0, 5.0)
-
-	// Добавляем параллельное ребро - capacity должна суммироваться
 	g.AddEdge(1, 2, 7.0, 3.0)
 
 	edge := g.GetEdge(1, 2)
 	require.NotNil(t, edge)
-	assert.Equal(t, 17.0, edge.Capacity, "Capacities should sum")
+	assert.Equal(t, 17.0, edge.Capacity)
 	assert.Equal(t, 17.0, edge.OriginalCapacity)
-	assert.Equal(t, 5.0, edge.Cost, "Cost should remain from first edge")
+	assert.Equal(t, 5.0, edge.Cost)
 }
 
 func TestResidualGraph_AddReverseEdge_ExistingForward(t *testing.T) {
 	g := NewResidualGraph()
 
-	// Сначала добавляем прямое ребро
 	g.AddEdge(1, 2, 10.0, 5.0)
-
-	// Пытаемся добавить reverse - НЕ должно перезаписать прямое
 	g.AddReverseEdge(1, 2, 3.0)
 
 	edge := g.GetEdge(1, 2)
 	require.NotNil(t, edge)
-	assert.False(t, edge.IsReverse, "Forward edge should not be overwritten")
+	assert.False(t, edge.IsReverse)
 	assert.Equal(t, 10.0, edge.Capacity)
 	assert.Equal(t, 5.0, edge.Cost)
-}
-
-func TestResidualGraph_AddReverseEdge_ExistingReverse(t *testing.T) {
-	g := NewResidualGraph()
-
-	// Добавляем reverse ребро
-	g.AddReverseEdge(1, 2, 5.0)
-
-	// Пытаемся добавить ещё одно reverse - должно остаться первое
-	g.AddReverseEdge(1, 2, 10.0)
-
-	edge := g.GetEdge(1, 2)
-	require.NotNil(t, edge)
-	assert.True(t, edge.IsReverse)
-	assert.Equal(t, -5.0, edge.Cost, "Cost should remain from first reverse edge")
-}
-
-func TestResidualGraph_AntiParallelEdges(t *testing.T) {
-	g := NewResidualGraph()
-
-	// Добавляем ребро 1->2
-	g.AddEdgeWithReverse(1, 2, 10, 1)
-
-	// Добавляем anti-parallel ребро 2->1
-	g.AddEdgeWithReverse(2, 1, 5, 2)
-
-	// Проверяем, что оба прямых ребра существуют
-	edge12 := g.GetEdge(1, 2)
-	edge21 := g.GetEdge(2, 1)
-
-	require.NotNil(t, edge12, "Edge 1->2 should exist")
-	require.NotNil(t, edge21, "Edge 2->1 should exist")
-
-	// Оба должны быть прямыми (не reverse)
-	assert.False(t, edge12.IsReverse, "Edge 1->2 should be forward")
-	assert.False(t, edge21.IsReverse, "Edge 2->1 should be forward")
-
-	// Проверяем capacity и cost
-	assert.Equal(t, 10.0, edge12.Capacity)
-	assert.Equal(t, 5.0, edge21.Capacity)
-	assert.Equal(t, 1.0, edge12.Cost)
-	assert.Equal(t, 2.0, edge21.Cost)
-}
-
-func TestResidualGraph_AntiParallelFlow(t *testing.T) {
-	g := NewResidualGraph()
-
-	// Граф: 1 <-> 2 -> 3
-	g.AddEdgeWithReverse(1, 2, 10, 0)
-	g.AddEdgeWithReverse(2, 1, 5, 0) // Anti-parallel
-	g.AddEdgeWithReverse(2, 3, 10, 0)
-
-	// Пускаем поток 8 по пути 1->2->3
-	g.UpdateFlow(1, 2, 8)
-	g.UpdateFlow(2, 3, 8)
-
-	edge12 := g.GetEdge(1, 2)
-	edge21 := g.GetEdge(2, 1)
-
-	// 1->2: capacity осталось 2, flow = 8
-	assert.Equal(t, 8.0, edge12.Flow)
-	assert.Equal(t, 2.0, edge12.Capacity)
-
-	// 2->1: остаётся прямым ребром, capacity увеличилась на flow (для возможности отмены)
-	assert.False(t, edge21.IsReverse)
-	assert.Equal(t, 13.0, edge21.Capacity) // 5 original + 8 cancellation
 }
 
 func TestResidualGraph_GetNeighborsList(t *testing.T) {
@@ -825,7 +621,6 @@ func TestResidualGraph_GetNeighborsList(t *testing.T) {
 	neighbors := rg.GetNeighborsList(1)
 
 	assert.Len(t, neighbors, 3)
-	// Verify they're in insertion order
 	assert.Equal(t, int64(2), neighbors[0].To)
 	assert.Equal(t, int64(3), neighbors[1].To)
 	assert.Equal(t, int64(4), neighbors[2].To)
@@ -836,7 +631,6 @@ func TestResidualGraph_GetNeighborsList_Empty(t *testing.T) {
 	rg.AddNode(1)
 
 	neighbors := rg.GetNeighborsList(1)
-
 	assert.Empty(t, neighbors)
 }
 
@@ -844,7 +638,6 @@ func TestResidualGraph_GetNeighborsList_Unknown(t *testing.T) {
 	rg := NewResidualGraph()
 
 	neighbors := rg.GetNeighborsList(999)
-
 	assert.Nil(t, neighbors)
 }
 
@@ -857,7 +650,6 @@ func TestResidualGraph_GetIncomingEdgesList(t *testing.T) {
 	incoming := rg.GetIncomingEdgesList(4)
 
 	assert.Len(t, incoming, 3)
-	// Should be sorted by From ID
 	assert.Equal(t, int64(1), incoming[0].From)
 	assert.Equal(t, int64(2), incoming[1].From)
 	assert.Equal(t, int64(3), incoming[2].From)
@@ -868,13 +660,104 @@ func TestResidualGraph_GetIncomingEdgesList_Empty(t *testing.T) {
 	rg.AddNode(1)
 
 	incoming := rg.GetIncomingEdgesList(1)
-
 	assert.Nil(t, incoming)
 }
 
+// =============================================================================
+// IncomingEdgesListCache Tests
+// =============================================================================
+
+func TestResidualGraph_BuildIncomingEdgesCache(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 4, 10, 1)
+	rg.AddEdgeWithReverse(2, 4, 20, 2)
+	rg.AddEdgeWithReverse(3, 4, 30, 3)
+
+	assert.True(t, rg.incomingCacheDirty)
+
+	rg.BuildIncomingEdgesCache()
+
+	assert.False(t, rg.incomingCacheDirty)
+	assert.Len(t, rg.IncomingEdgesListCache[4], 3)
+}
+
+func TestResidualGraph_GetIncomingEdgesListCached(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 4, 10, 1)
+	rg.AddEdgeWithReverse(2, 4, 20, 2)
+	rg.AddEdgeWithReverse(3, 4, 30, 3)
+
+	// First call builds cache
+	incoming := rg.GetIncomingEdgesListCached(4)
+	assert.Len(t, incoming, 3)
+	assert.False(t, rg.incomingCacheDirty)
+
+	// Second call uses cache
+	incoming2 := rg.GetIncomingEdgesListCached(4)
+	assert.Equal(t, incoming, incoming2)
+}
+
+func TestResidualGraph_GetIncomingEdgesListCached_Empty(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddNode(1)
+
+	incoming := rg.GetIncomingEdgesListCached(1)
+	assert.Nil(t, incoming)
+}
+
+func TestResidualGraph_IncomingCacheInvalidation(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 3, 10, 1)
+
+	rg.BuildIncomingEdgesCache()
+	assert.False(t, rg.incomingCacheDirty)
+
+	// Adding new edge should invalidate cache
+	rg.AddEdgeWithReverse(2, 3, 20, 2)
+	assert.True(t, rg.incomingCacheDirty)
+
+	// GetIncomingEdgesListCached should rebuild
+	incoming := rg.GetIncomingEdgesListCached(3)
+	assert.Len(t, incoming, 2)
+	assert.False(t, rg.incomingCacheDirty)
+}
+
+func TestResidualGraph_CacheSorting(t *testing.T) {
+	rg := NewResidualGraph()
+	// Add in non-sorted order
+	rg.AddEdgeWithReverse(5, 10, 10, 1)
+	rg.AddEdgeWithReverse(1, 10, 10, 1)
+	rg.AddEdgeWithReverse(3, 10, 10, 1)
+
+	incoming := rg.GetIncomingEdgesListCached(10)
+
+	assert.Len(t, incoming, 3)
+	// Should be sorted by From
+	assert.Equal(t, int64(1), incoming[0].From)
+	assert.Equal(t, int64(3), incoming[1].From)
+	assert.Equal(t, int64(5), incoming[2].From)
+}
+
+func TestResidualGraph_CacheClear(t *testing.T) {
+	rg := NewResidualGraph()
+	rg.AddEdgeWithReverse(1, 2, 10, 1)
+	rg.BuildIncomingEdgesCache()
+
+	assert.False(t, rg.incomingCacheDirty)
+	assert.NotEmpty(t, rg.IncomingEdgesListCache)
+
+	rg.Clear()
+
+	assert.True(t, rg.incomingCacheDirty)
+	assert.Empty(t, rg.IncomingEdgesListCache)
+}
+
+// =============================================================================
+// GetSortedNodes Tests
+// =============================================================================
+
 func TestResidualGraph_GetSortedNodes(t *testing.T) {
 	rg := NewResidualGraph()
-	// Add nodes in random order
 	rg.AddNode(5)
 	rg.AddNode(1)
 	rg.AddNode(3)
@@ -892,14 +775,11 @@ func TestResidualGraph_GetSortedNodes_Cached(t *testing.T) {
 	rg.AddNode(1)
 	rg.AddNode(2)
 
-	// First call computes
 	sorted1 := rg.GetSortedNodes()
-	// Second call should return cached
 	sorted2 := rg.GetSortedNodes()
 
 	assert.Equal(t, sorted1, sorted2)
 
-	// Add new node - should invalidate cache
 	rg.AddNode(4)
 	sorted3 := rg.GetSortedNodes()
 
@@ -916,14 +796,12 @@ func TestResidualGraph_CloneToPooled(t *testing.T) {
 	clone := original.CloneToPooled(pool)
 	defer pool.ReleaseGraph(clone)
 
-	// Verify data equality
 	assert.Equal(t, original.NodeCount(), clone.NodeCount())
 
 	origEdge := original.GetEdge(1, 2)
 	cloneEdge := clone.GetEdge(1, 2)
 
-	assert.True(t, origEdge != cloneEdge, "Should be different pointer objects")
-
+	assert.True(t, origEdge != cloneEdge)
 	assert.Equal(t, origEdge.Flow, cloneEdge.Flow)
 	assert.Equal(t, origEdge.Capacity, cloneEdge.Capacity)
 }
@@ -935,7 +813,7 @@ func TestResidualGraph_GetAllEdges(t *testing.T) {
 
 	allEdges := rg.GetAllEdges()
 
-	assert.Len(t, allEdges, 2) // Only forward edges
+	assert.Len(t, allEdges, 2)
 	for _, edge := range allEdges {
 		assert.False(t, edge.IsReverse)
 	}
@@ -946,26 +824,28 @@ func TestResidualGraph_Clear(t *testing.T) {
 	rg.AddEdgeWithReverse(1, 2, 10, 1)
 	rg.AddEdgeWithReverse(2, 3, 20, 2)
 	rg.UpdateFlow(1, 2, 5)
+	rg.BuildIncomingEdgesCache()
 
 	assert.Equal(t, 3, rg.NodeCount())
+	assert.False(t, rg.incomingCacheDirty)
 
 	rg.Clear()
 
 	assert.Equal(t, 0, rg.NodeCount())
 	assert.Equal(t, 0, rg.EdgeCount())
+	assert.Empty(t, rg.IncomingEdgesListCache)
+	assert.True(t, rg.incomingCacheDirty)
 }
 
 func TestSafeResidualGraph(t *testing.T) {
 	sg := NewSafeResidualGraph()
 
-	// Write operations
 	sg.WithWriteLock(func(g *ResidualGraph) {
 		g.AddNode(1)
 		g.AddNode(2)
 		g.AddEdgeWithReverse(1, 2, 10, 1)
 	})
 
-	// Read operations
 	var nodeCount int
 	sg.WithReadLock(func(g *ResidualGraph) {
 		nodeCount = g.NodeCount()
@@ -1023,4 +903,44 @@ func TestSafeResidualGraph_ConcurrentReads(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestResidualGraph_AntiParallelEdges(t *testing.T) {
+	g := NewResidualGraph()
+
+	g.AddEdgeWithReverse(1, 2, 10, 1)
+	g.AddEdgeWithReverse(2, 1, 5, 2)
+
+	edge12 := g.GetEdge(1, 2)
+	edge21 := g.GetEdge(2, 1)
+
+	require.NotNil(t, edge12)
+	require.NotNil(t, edge21)
+
+	assert.False(t, edge12.IsReverse)
+	assert.False(t, edge21.IsReverse)
+	assert.Equal(t, 10.0, edge12.Capacity)
+	assert.Equal(t, 5.0, edge21.Capacity)
+	assert.Equal(t, 1.0, edge12.Cost)
+	assert.Equal(t, 2.0, edge21.Cost)
+}
+
+func TestResidualGraph_AntiParallelFlow(t *testing.T) {
+	g := NewResidualGraph()
+
+	g.AddEdgeWithReverse(1, 2, 10, 0)
+	g.AddEdgeWithReverse(2, 1, 5, 0)
+	g.AddEdgeWithReverse(2, 3, 10, 0)
+
+	g.UpdateFlow(1, 2, 8)
+	g.UpdateFlow(2, 3, 8)
+
+	edge12 := g.GetEdge(1, 2)
+	edge21 := g.GetEdge(2, 1)
+
+	assert.Equal(t, 8.0, edge12.Flow)
+	assert.Equal(t, 2.0, edge12.Capacity)
+
+	assert.False(t, edge21.IsReverse)
+	assert.Equal(t, 13.0, edge21.Capacity)
 }

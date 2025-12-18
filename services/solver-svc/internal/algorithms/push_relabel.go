@@ -1,195 +1,504 @@
 package algorithms
 
 import (
-	"container/heap"
 	"context"
 
 	"logistics/services/solver-svc/internal/graph"
 )
 
 // =============================================================================
-// Push-Relabel Algorithm (Preflow-Push)
+// Push-Relabel Algorithm (Preflow-Push) - Optimized Implementation
 // =============================================================================
 //
-// The Push-Relabel algorithm (also known as Preflow-Push) computes maximum flow
-// by maintaining a preflow and gradually converting it to a valid flow.
-// Unlike augmenting path methods, it works locally on vertices.
+// This implementation includes several optimizations:
+//   - Index-based operations instead of node ID lookups in hot paths
+//   - Bucket-based data structure for O(1) highest/lowest label selection
+//   - Cached incoming edges list to avoid repeated allocations
+//   - Adaptive global relabeling based on relabel count
+//   - Gap heuristic with efficient tracking
 //
 // Time Complexity:
 //   - FIFO variant: O(V³)
 //   - Highest Label variant: O(V² √E)
-//   - Lowest Label variant: O(V² E)
 //
 // Space Complexity: O(V + E)
-//
-// Key Concepts:
-//   - Preflow: Allows excess flow at vertices (more inflow than outflow)
-//   - Height function: Labels vertices; flow only goes from higher to lower
-//   - Push: Moves excess flow to lower neighbors
-//   - Relabel: Increases height when no valid push is possible
-//
-// Optimizations Implemented:
-//   - Gap heuristic: When a height has no vertices, cut off higher vertices
-//   - Global relabeling: Periodically recompute heights via BFS from sink
-//   - Current arc optimization: Skip recently saturated edges
-//   - Highest/Lowest label selection: Better vertex selection strategies
-//
-// This implementation provides three variants:
-//   - PushRelabel: FIFO vertex selection
-//   - PushRelabelHighestLabel: Highest active vertex first
-//   - PushRelabelLowestLabel: Lowest active vertex first
-//
-// References:
-//   - Goldberg, A.V. & Tarjan, R.E. (1988). "A new approach to the maximum-flow problem"
-//   - Cherkassky, B.V. & Goldberg, A.V. (1997). "On implementing push-relabel method
-//     for the maximum flow problem"
 // =============================================================================
 
 // PushRelabelResult contains the result of the Push-Relabel algorithm.
 type PushRelabelResult struct {
-	// MaxFlow is the maximum flow value computed.
-	MaxFlow float64
-
-	// Iterations is the number of push/relabel operations performed.
+	MaxFlow    float64
 	Iterations int
-
-	// Canceled indicates whether the operation was canceled via context.
-	Canceled bool
+	Canceled   bool
 }
 
 // =============================================================================
-// Data Structures
+// Optimized Data Structures
 // =============================================================================
 
-// prNode represents a vertex entry in the priority queue with versioning
-// to handle stale entries efficiently.
-type prNode struct {
-	id      int64
-	height  int
-	version int
+// nodeData holds per-node data in a cache-friendly layout.
+type nodeData struct {
+	height     int
+	excess     float64
+	currentArc int
 }
 
-// maxHeap implements a max-heap for Highest Label vertex selection.
-// Uses versioning to efficiently handle height updates without removal.
-type maxHeap struct {
-	items       []prNode
-	nodeVersion map[int64]int // Current version of each node
+// bucketQueue implements a bucket-based priority queue for O(1) operations.
+// Used for both Highest Label and Lowest Label selection strategies.
+type bucketQueue struct {
+	buckets     [][]int // buckets[height] = slice of node indices
+	inBucket    []bool  // inBucket[nodeIdx] = is node in some bucket
+	maxActive   int     // highest non-empty bucket index
+	minActive   int     // lowest non-empty bucket index
+	activeCount int     // total number of active nodes
 }
 
-func newMaxHeap(capacity int) *maxHeap {
-	return &maxHeap{
-		items:       make([]prNode, 0, capacity),
-		nodeVersion: make(map[int64]int, capacity),
+// newBucketQueue creates a new bucket queue with the given capacity.
+func newBucketQueue(maxHeight, nodeCount int) *bucketQueue {
+	buckets := make([][]int, maxHeight+1)
+	for i := range buckets {
+		buckets[i] = make([]int, 0, 8) // Small initial capacity
+	}
+	return &bucketQueue{
+		buckets:   buckets,
+		inBucket:  make([]bool, nodeCount),
+		maxActive: -1,
+		minActive: maxHeight + 1,
 	}
 }
 
-func (h *maxHeap) Len() int           { return len(h.items) }
-func (h *maxHeap) Less(i, j int) bool { return h.items[i].height > h.items[j].height }
-func (h *maxHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
+// push adds a node index to the bucket at the given height.
+func (bq *bucketQueue) push(nodeIdx, height int) {
+	if bq.inBucket[nodeIdx] {
+		return // Already in queue
+	}
+	if height >= len(bq.buckets) || height < 0 {
+		return
+	}
 
-func (h *maxHeap) Push(x any) {
-	h.items = append(h.items, x.(prNode))
+	bq.buckets[height] = append(bq.buckets[height], nodeIdx)
+	bq.inBucket[nodeIdx] = true
+	bq.activeCount++
+
+	if height > bq.maxActive {
+		bq.maxActive = height
+	}
+	if height < bq.minActive {
+		bq.minActive = height
+	}
 }
 
-func (h *maxHeap) Pop() any {
-	old := h.items
-	n := len(old)
-	item := old[n-1]
-	h.items = old[0 : n-1]
-	return item
-}
-
-// push adds a vertex to the heap with a new version.
-func (h *maxHeap) push(id int64, height int) {
-	h.nodeVersion[id]++
-	heap.Push(h, prNode{id: id, height: height, version: h.nodeVersion[id]})
-}
-
-// pop extracts a vertex, skipping stale entries.
-func (h *maxHeap) pop() (int64, bool) {
-	for h.Len() > 0 {
-		item := heap.Pop(h).(prNode)
-		// Check if this entry is still valid
-		if item.version == h.nodeVersion[item.id] {
-			return item.id, true
+// popHighest removes and returns the node with the highest height.
+func (bq *bucketQueue) popHighest() (int, bool) {
+	for bq.maxActive >= 0 {
+		bucket := bq.buckets[bq.maxActive]
+		if len(bucket) > 0 {
+			// Pop from the end (LIFO within bucket for cache locality)
+			n := len(bucket) - 1
+			nodeIdx := bucket[n]
+			bq.buckets[bq.maxActive] = bucket[:n]
+			bq.inBucket[nodeIdx] = false
+			bq.activeCount--
+			return nodeIdx, true
 		}
-		// Stale entry - skip
+		bq.maxActive--
 	}
-	return 0, false
+	return -1, false
+}
+
+// popLowest removes and returns the node with the lowest height.
+func (bq *bucketQueue) popLowest() (int, bool) {
+	for bq.minActive < len(bq.buckets) {
+		bucket := bq.buckets[bq.minActive]
+		if len(bucket) > 0 {
+			n := len(bucket) - 1
+			nodeIdx := bucket[n]
+			bq.buckets[bq.minActive] = bucket[:n]
+			bq.inBucket[nodeIdx] = false
+			bq.activeCount--
+			return nodeIdx, true
+		}
+		bq.minActive++
+	}
+	return -1, false
+}
+
+// remove removes a node from its bucket (used when height changes).
+func (bq *bucketQueue) remove(nodeIdx, height int) {
+	if !bq.inBucket[nodeIdx] {
+		return
+	}
+	if height >= len(bq.buckets) || height < 0 {
+		return
+	}
+
+	bucket := bq.buckets[height]
+	for i, idx := range bucket {
+		if idx == nodeIdx {
+			// Swap with last and truncate
+			bucket[i] = bucket[len(bucket)-1]
+			bq.buckets[height] = bucket[:len(bucket)-1]
+			bq.inBucket[nodeIdx] = false
+			bq.activeCount--
+			return
+		}
+	}
+}
+
+// updateHeight moves a node from old height bucket to new height bucket.
+func (bq *bucketQueue) updateHeight(nodeIdx, oldHeight, newHeight int) {
+	if bq.inBucket[nodeIdx] {
+		bq.remove(nodeIdx, oldHeight)
+	}
+	bq.push(nodeIdx, newHeight)
+}
+
+// isEmpty returns true if there are no active nodes.
+func (bq *bucketQueue) isEmpty() bool {
+	return bq.activeCount == 0
+}
+
+// clear resets the bucket queue.
+func (bq *bucketQueue) clear() {
+	for i := range bq.buckets {
+		bq.buckets[i] = bq.buckets[i][:0]
+	}
+	for i := range bq.inBucket {
+		bq.inBucket[i] = false
+	}
+	bq.maxActive = -1
+	bq.minActive = len(bq.buckets)
+	bq.activeCount = 0
 }
 
 // =============================================================================
-// Algorithm State
+// Optimized Push-Relabel State
 // =============================================================================
 
-// pushRelabelState holds the mutable state during algorithm execution.
-type pushRelabelState struct {
+// prState holds the optimized state for Push-Relabel algorithm.
+type prState struct {
 	g       *graph.ResidualGraph
 	source  int64
 	sink    int64
-	n       int
-	nodes   []int64       // Deterministic node ordering
-	nodeIdx map[int64]int // Node ID to index mapping
+	epsilon float64
 
-	height      []int     // height[nodeIdx[v]]
-	excess      []float64 // excess[nodeIdx[v]]
-	heightCount []int     // Number of vertices at each height
+	// Node mapping
+	nodes     []int64       // Index → Node ID
+	nodeIndex map[int64]int // Node ID → Index
+	n         int           // Number of nodes
+
+	// Per-node data (index-based access)
+	data        []nodeData
+	heightCount []int // Number of nodes at each height
+
+	// Precomputed edge lists for each node (index-based)
+	edgeLists [][]*graph.ResidualEdge
+
+	// Source and sink indices
+	sourceIdx int
+	sinkIdx   int
 
 	maxHeight int
-	epsilon   float64
 
-	// Current arc optimization
-	currentArc []int // Index of next edge to try for each vertex
+	// Adaptive global relabeling
+	relabelCount        int
+	globalRelabelPeriod int
+
+	// Statistics
+	pushCount   int
+	relabelOps  int
+	globalCount int
 }
 
-// newPushRelabelState initializes the algorithm state.
-func newPushRelabelState(g *graph.ResidualGraph, source, sink int64, options *SolverOptions) *pushRelabelState {
+// newPRState creates and initializes optimized Push-Relabel state.
+func newPRState(g *graph.ResidualGraph, source, sink int64, options *SolverOptions) *prState {
 	nodes := g.GetSortedNodes()
 	n := len(nodes)
 
-	nodeIdx := make(map[int64]int, n)
+	// Build node index mapping
+	nodeIndex := make(map[int64]int, n)
 	for i, node := range nodes {
-		nodeIdx[node] = i
+		nodeIndex[node] = i
 	}
 
-	return &pushRelabelState{
-		g:           g,
-		source:      source,
-		sink:        sink,
-		n:           n,
-		nodes:       nodes,
-		nodeIdx:     nodeIdx,
-		height:      make([]int, n),
-		excess:      make([]float64, n),
-		heightCount: make([]int, 2*n+1),
-		currentArc:  make([]int, n),
-		maxHeight:   2*n - 1,
-		epsilon:     options.Epsilon,
+	maxHeight := 2*n - 1
+
+	s := &prState{
+		g:                   g,
+		source:              source,
+		sink:                sink,
+		epsilon:             options.Epsilon,
+		nodes:               nodes,
+		nodeIndex:           nodeIndex,
+		n:                   n,
+		data:                make([]nodeData, n),
+		heightCount:         make([]int, maxHeight+2),
+		edgeLists:           make([][]*graph.ResidualEdge, n),
+		sourceIdx:           nodeIndex[source],
+		sinkIdx:             nodeIndex[sink],
+		maxHeight:           maxHeight,
+		globalRelabelPeriod: n, // Will be adjusted adaptively
+	}
+
+	// Precompute edge lists for each node
+	for i, node := range nodes {
+		s.edgeLists[i] = g.GetNeighborsList(node)
+	}
+
+	// Build incoming edges cache for globalRelabel
+	g.BuildIncomingEdgesCache()
+
+	return s
+}
+
+// initialize sets up the initial preflow.
+func (s *prState) initialize() {
+	// All heights start at 0, source height = n
+	for i := range s.data {
+		s.data[i].height = 0
+		s.data[i].excess = 0
+		s.data[i].currentArc = 0
+	}
+	s.data[s.sourceIdx].height = s.n
+
+	// Count heights
+	for i := range s.heightCount {
+		s.heightCount[i] = 0
+	}
+	for i := range s.data {
+		h := s.data[i].height
+		if h <= s.maxHeight {
+			s.heightCount[h]++
+		}
+	}
+
+	// Saturate all edges from source
+	for _, edge := range s.edgeLists[s.sourceIdx] {
+		if edge.Capacity > s.epsilon {
+			toIdx := s.nodeIndex[edge.To]
+			flow := edge.Capacity
+			s.g.UpdateFlow(s.source, edge.To, flow)
+			s.data[toIdx].excess += flow
+			s.data[s.sourceIdx].excess -= flow
+		}
+	}
+
+	// Perform initial global relabeling for accurate heights
+	s.globalRelabel()
+}
+
+// globalRelabel recomputes heights using reverse BFS from sink.
+func (s *prState) globalRelabel() {
+	s.globalCount++
+
+	// Reset height counts
+	for i := range s.heightCount {
+		s.heightCount[i] = 0
+	}
+
+	// Initialize new heights to maxHeight + 1 (unreachable)
+	newHeight := make([]int, s.n)
+	for i := range newHeight {
+		newHeight[i] = s.maxHeight + 1
+	}
+	newHeight[s.sinkIdx] = 0
+
+	// BFS from sink using cached incoming edges
+	queue := make([]int, 0, s.n)
+	queue = append(queue, s.sinkIdx)
+	head := 0
+
+	for head < len(queue) {
+		uIdx := queue[head]
+		head++
+		uHeight := newHeight[uIdx]
+		u := s.nodes[uIdx]
+
+		// Get cached incoming edges (edges pointing TO u)
+		incomingList := s.g.GetIncomingEdgesListCached(u)
+		for _, incoming := range incomingList {
+			vIdx := s.nodeIndex[incoming.From]
+
+			// Check if v can push to u (the edge from v to u has capacity)
+			if newHeight[vIdx] > s.maxHeight && incoming.Edge.Capacity > s.epsilon {
+				newHeight[vIdx] = uHeight + 1
+				queue = append(queue, vIdx)
+			}
+		}
+	}
+
+	// Source always has height n
+	newHeight[s.sourceIdx] = s.n
+
+	// Apply new heights
+	for i, h := range newHeight {
+		s.data[i].height = h
+		if h <= s.maxHeight {
+			s.heightCount[h]++
+		}
+	}
+
+	// Reset current arcs
+	for i := range s.data {
+		s.data[i].currentArc = 0
+	}
+
+	// Reset relabel count
+	s.relabelCount = 0
+}
+
+// push attempts to push flow from node u to node v.
+// Returns the amount of flow pushed.
+func (s *prState) push(uIdx int, edge *graph.ResidualEdge) float64 {
+	if edge.Capacity <= s.epsilon {
+		return 0
+	}
+
+	vIdx := s.nodeIndex[edge.To]
+
+	// Can only push to lower height
+	if s.data[uIdx].height != s.data[vIdx].height+1 {
+		return 0
+	}
+
+	// Calculate push amount
+	delta := s.data[uIdx].excess
+	if edge.Capacity < delta {
+		delta = edge.Capacity
+	}
+
+	if delta <= s.epsilon {
+		return 0
+	}
+
+	// Update graph
+	s.g.UpdateFlow(s.nodes[uIdx], edge.To, delta)
+
+	// Update excess
+	s.data[uIdx].excess -= delta
+	s.data[vIdx].excess += delta
+
+	s.pushCount++
+
+	return delta
+}
+
+// relabel increases the height of node u.
+// Returns the new height, or -1 if node should be deactivated.
+func (s *prState) relabel(uIdx int) int {
+	oldHeight := s.data[uIdx].height
+	if oldHeight > s.maxHeight {
+		return -1
+	}
+
+	edges := s.edgeLists[uIdx]
+	if len(edges) == 0 {
+		s.heightCount[oldHeight]--
+		s.data[uIdx].height = s.maxHeight + 1
+		return -1
+	}
+
+	// Find minimum height among neighbors with residual capacity
+	minHeight := s.maxHeight + 1
+	for _, edge := range edges {
+		if edge.Capacity > s.epsilon {
+			vIdx := s.nodeIndex[edge.To]
+			h := s.data[vIdx].height
+			if h < minHeight {
+				minHeight = h
+			}
+		}
+	}
+
+	if minHeight >= s.maxHeight {
+		s.heightCount[oldHeight]--
+		s.data[uIdx].height = s.maxHeight + 1
+		return -1
+	}
+
+	newHeight := minHeight + 1
+	if newHeight > s.maxHeight {
+		s.heightCount[oldHeight]--
+		s.data[uIdx].height = s.maxHeight + 1
+		return -1
+	}
+
+	// Gap heuristic
+	s.heightCount[oldHeight]--
+	if s.heightCount[oldHeight] == 0 && oldHeight < s.n && oldHeight > 0 {
+		s.applyGapHeuristic(oldHeight)
+	}
+
+	s.heightCount[newHeight]++
+	s.data[uIdx].height = newHeight
+	s.data[uIdx].currentArc = 0
+
+	s.relabelOps++
+	s.relabelCount++
+
+	return newHeight
+}
+
+// applyGapHeuristic raises all nodes above the gap to maxHeight + 1.
+func (s *prState) applyGapHeuristic(gapHeight int) {
+	for i := 0; i < s.n; i++ {
+		h := s.data[i].height
+		if h > gapHeight && h <= s.maxHeight && i != s.sourceIdx {
+			s.heightCount[h]--
+			s.data[i].height = s.maxHeight + 1
+		}
 	}
 }
 
-// Height/excess accessors for cleaner code
-func (s *pushRelabelState) getHeight(node int64) int            { return s.height[s.nodeIdx[node]] }
-func (s *pushRelabelState) setHeight(node int64, h int)         { s.height[s.nodeIdx[node]] = h }
-func (s *pushRelabelState) getExcess(node int64) float64        { return s.excess[s.nodeIdx[node]] }
-func (s *pushRelabelState) addExcess(node int64, delta float64) { s.excess[s.nodeIdx[node]] += delta }
-func (s *pushRelabelState) getCurrentArc(node int64) int        { return s.currentArc[s.nodeIdx[node]] }
-func (s *pushRelabelState) setCurrentArc(node int64, arc int)   { s.currentArc[s.nodeIdx[node]] = arc }
+// discharge processes node u until it has no excess or is deactivated.
+// Returns true if the node is still active after discharge.
+func (s *prState) discharge(uIdx int, activateFunc func(int)) bool {
+	edges := s.edgeLists[uIdx]
+	if len(edges) == 0 {
+		return false
+	}
+
+	for s.data[uIdx].excess > s.epsilon && s.data[uIdx].height <= s.maxHeight {
+		arc := s.data[uIdx].currentArc
+
+		if arc >= len(edges) {
+			// Need to relabel
+			newHeight := s.relabel(uIdx)
+			if newHeight < 0 {
+				return false
+			}
+
+			// Check if we should do global relabel
+			if s.relabelCount >= s.globalRelabelPeriod {
+				s.globalRelabel()
+			}
+			continue
+		}
+
+		edge := edges[arc]
+		vIdx := s.nodeIndex[edge.To]
+
+		// Try to push
+		if edge.Capacity > s.epsilon && s.data[uIdx].height == s.data[vIdx].height+1 {
+			pushed := s.push(uIdx, edge)
+			if pushed > s.epsilon && activateFunc != nil {
+				// Activate v if it became active
+				if vIdx != s.sourceIdx && vIdx != s.sinkIdx {
+					activateFunc(vIdx)
+				}
+			}
+		} else {
+			s.data[uIdx].currentArc++
+		}
+	}
+
+	return s.data[uIdx].excess > s.epsilon && s.data[uIdx].height <= s.maxHeight
+}
 
 // =============================================================================
 // Push-Relabel FIFO Variant
 // =============================================================================
 
 // PushRelabel executes the Push-Relabel algorithm with FIFO vertex selection.
-//
-// Parameters:
-//   - g: The residual graph (will be modified)
-//   - source: The source node ID
-//   - sink: The sink node ID
-//   - options: Solver options
-//
-// Returns:
-//   - *PushRelabelResult containing max flow and iteration count
 func PushRelabel(g *graph.ResidualGraph, source, sink int64, options *SolverOptions) *PushRelabelResult {
 	return PushRelabelWithContext(context.Background(), g, source, sink, options)
 }
@@ -204,23 +513,22 @@ func PushRelabelWithContext(ctx context.Context, g *graph.ResidualGraph, source,
 		return &PushRelabelResult{MaxFlow: 0, Iterations: 0}
 	}
 
-	state := newPushRelabelState(g, source, sink, options)
+	state := newPRState(g, source, sink, options)
 	state.initialize()
 
-	// FIFO queue of active vertices
-	queue := make([]int64, 0, state.n)
-	inQueue := make(map[int64]bool, state.n)
+	// FIFO queue using slice (more efficient than list)
+	queue := make([]int, 0, state.n)
+	inQueue := make([]bool, state.n)
 
-	// Add initially active vertices
-	for _, node := range state.nodes {
-		if node != source && node != sink && state.getExcess(node) > state.epsilon {
-			queue = append(queue, node)
-			inQueue[node] = true
+	// Add initially active nodes
+	for i := 0; i < state.n; i++ {
+		if i != state.sourceIdx && i != state.sinkIdx && state.data[i].excess > state.epsilon {
+			queue = append(queue, i)
+			inQueue[i] = true
 		}
 	}
 
 	iterations := 0
-	globalRelabelFreq := state.n
 	const checkInterval = 100
 
 	for len(queue) > 0 {
@@ -228,12 +536,11 @@ func PushRelabelWithContext(ctx context.Context, g *graph.ResidualGraph, source,
 			break
 		}
 
-		// Context check
 		if iterations%checkInterval == 0 {
 			select {
 			case <-ctx.Done():
 				return &PushRelabelResult{
-					MaxFlow:    state.getExcess(sink),
+					MaxFlow:    state.data[state.sinkIdx].excess,
 					Iterations: iterations,
 					Canceled:   true,
 				}
@@ -241,54 +548,30 @@ func PushRelabelWithContext(ctx context.Context, g *graph.ResidualGraph, source,
 			}
 		}
 
-		// Periodic global relabeling
-		if iterations > 0 && iterations%globalRelabelFreq == 0 {
-			state.globalRelabel()
-			// Rebuild queue
-			queue = queue[:0]
-			for k := range inQueue {
-				delete(inQueue, k)
-			}
-			for _, node := range state.nodes {
-				if node != source && node != sink {
-					if state.getExcess(node) > state.epsilon && state.getHeight(node) <= state.maxHeight {
-						queue = append(queue, node)
-						inQueue[node] = true
-					}
-				}
-			}
-			// Check if queue became empty after rebuild
-			if len(queue) == 0 {
-				break
-			}
-		}
-
-		// Pop vertex from queue
-		u := queue[0]
+		// Pop from front
+		uIdx := queue[0]
 		queue = queue[1:]
-		delete(inQueue, u)
+		inQueue[uIdx] = false
 
-		// Discharge the vertex
-		state.discharge(u, func(v int64) {
-			if v != source && v != sink && !inQueue[v] && state.getExcess(v) > state.epsilon {
-				queue = append(queue, v)
-				inQueue[v] = true
+		// Discharge
+		stillActive := state.discharge(uIdx, func(vIdx int) {
+			if !inQueue[vIdx] && state.data[vIdx].excess > state.epsilon {
+				queue = append(queue, vIdx)
+				inQueue[vIdx] = true
 			}
 		})
 
 		// Re-add if still active
-		if state.getExcess(u) > state.epsilon && state.getHeight(u) <= state.maxHeight {
-			if !inQueue[u] {
-				queue = append(queue, u)
-				inQueue[u] = true
-			}
+		if stillActive && !inQueue[uIdx] {
+			queue = append(queue, uIdx)
+			inQueue[uIdx] = true
 		}
 
 		iterations++
 	}
 
 	return &PushRelabelResult{
-		MaxFlow:    state.getExcess(sink),
+		MaxFlow:    state.data[state.sinkIdx].excess,
 		Iterations: iterations,
 		Canceled:   false,
 	}
@@ -299,16 +582,6 @@ func PushRelabelWithContext(ctx context.Context, g *graph.ResidualGraph, source,
 // =============================================================================
 
 // PushRelabelHighestLabel executes Push-Relabel with Highest Label selection.
-// This variant achieves O(V² √E) time complexity.
-//
-// Parameters:
-//   - g: The residual graph (will be modified)
-//   - source: The source node ID
-//   - sink: The sink node ID
-//   - options: Solver options
-//
-// Returns:
-//   - *PushRelabelResult containing max flow and iteration count
 func PushRelabelHighestLabel(g *graph.ResidualGraph, source, sink int64, options *SolverOptions) *PushRelabelResult {
 	return PushRelabelHighestLabelWithContext(context.Background(), g, source, sink, options)
 }
@@ -323,24 +596,25 @@ func PushRelabelHighestLabelWithContext(ctx context.Context, g *graph.ResidualGr
 		return &PushRelabelResult{MaxFlow: 0, Iterations: 0}
 	}
 
-	state := newPushRelabelState(g, source, sink, options)
+	state := newPRState(g, source, sink, options)
 	state.initialize()
 
-	// Max-heap with versioning for efficient updates
-	activeHeap := newMaxHeap(state.n)
+	// Bucket queue for highest label selection
+	bq := newBucketQueue(state.maxHeight, state.n)
 
-	// Add initially active vertices
-	for _, node := range state.nodes {
-		if node != source && node != sink && state.getExcess(node) > state.epsilon {
-			activeHeap.push(node, state.getHeight(node))
+	// Add initially active nodes
+	for i := 0; i < state.n; i++ {
+		if i != state.sourceIdx && i != state.sinkIdx {
+			if state.data[i].excess > state.epsilon && state.data[i].height <= state.maxHeight {
+				bq.push(i, state.data[i].height)
+			}
 		}
 	}
 
 	iterations := 0
-	globalRelabelFreq := state.n
 	const checkInterval = 100
 
-	for activeHeap.Len() > 0 {
+	for !bq.isEmpty() {
 		if options.MaxIterations > 0 && iterations >= options.MaxIterations {
 			break
 		}
@@ -349,59 +623,48 @@ func PushRelabelHighestLabelWithContext(ctx context.Context, g *graph.ResidualGr
 			select {
 			case <-ctx.Done():
 				return &PushRelabelResult{
-					MaxFlow:    state.getExcess(sink),
+					MaxFlow:    state.data[state.sinkIdx].excess,
 					Iterations: iterations,
 					Canceled:   true,
 				}
 			default:
 			}
-			if activeHeap.Len() == 0 {
-				break
-			}
 		}
 
-		// Periodic global relabeling
-		if iterations > 0 && iterations%globalRelabelFreq == 0 {
-			state.globalRelabel()
-			// Rebuild heap
-			activeHeap = newMaxHeap(state.n)
-			for _, node := range state.nodes {
-				if node != source && node != sink {
-					if state.getExcess(node) > state.epsilon && state.getHeight(node) <= state.maxHeight {
-						activeHeap.push(node, state.getHeight(node))
-					}
-				}
-			}
-		}
-
-		// Get highest active vertex
-		u, ok := activeHeap.pop()
+		uIdx, ok := bq.popHighest()
 		if !ok {
 			break
 		}
 
 		// Skip if no longer active
-		if state.getExcess(u) <= state.epsilon || state.getHeight(u) > state.maxHeight {
+		if state.data[uIdx].excess <= state.epsilon || state.data[uIdx].height > state.maxHeight {
 			continue
 		}
 
+		oldHeight := state.data[uIdx].height
+
 		// Discharge
-		state.discharge(u, func(v int64) {
-			if v != source && v != sink && state.getExcess(v) > state.epsilon {
-				activeHeap.push(v, state.getHeight(v))
+		stillActive := state.discharge(uIdx, func(vIdx int) {
+			if state.data[vIdx].excess > state.epsilon && state.data[vIdx].height <= state.maxHeight {
+				bq.push(vIdx, state.data[vIdx].height)
 			}
 		})
 
-		// Re-add if still active
-		if state.getExcess(u) > state.epsilon && state.getHeight(u) <= state.maxHeight {
-			activeHeap.push(u, state.getHeight(u))
+		// Re-add if still active (possibly at new height)
+		if stillActive {
+			newHeight := state.data[uIdx].height
+			if newHeight != oldHeight {
+				bq.push(uIdx, newHeight)
+			} else {
+				bq.push(uIdx, oldHeight)
+			}
 		}
 
 		iterations++
 	}
 
 	return &PushRelabelResult{
-		MaxFlow:    state.getExcess(sink),
+		MaxFlow:    state.data[state.sinkIdx].excess,
 		Iterations: iterations,
 		Canceled:   false,
 	}
@@ -412,15 +675,6 @@ func PushRelabelHighestLabelWithContext(ctx context.Context, g *graph.ResidualGr
 // =============================================================================
 
 // PushRelabelLowestLabel executes Push-Relabel with Lowest Label selection.
-//
-// Parameters:
-//   - g: The residual graph (will be modified)
-//   - source: The source node ID
-//   - sink: The sink node ID
-//   - options: Solver options
-//
-// Returns:
-//   - *PushRelabelResult containing max flow and iteration count
 func PushRelabelLowestLabel(g *graph.ResidualGraph, source, sink int64, options *SolverOptions) *PushRelabelResult {
 	return PushRelabelLowestLabelWithContext(context.Background(), g, source, sink, options)
 }
@@ -435,37 +689,25 @@ func PushRelabelLowestLabelWithContext(ctx context.Context, g *graph.ResidualGra
 		return &PushRelabelResult{MaxFlow: 0, Iterations: 0}
 	}
 
-	state := newPushRelabelState(g, source, sink, options)
+	state := newPRState(g, source, sink, options)
 	state.initialize()
 
-	// Bucket-based structure for each height level
-	buckets := make([][]int64, 2*state.n+1)
-	for i := range buckets {
-		buckets[i] = make([]int64, 0)
-	}
+	// Bucket queue for lowest label selection
+	bq := newBucketQueue(state.maxHeight, state.n)
 
-	inBucket := make(map[int64]bool, state.n)
-	minActiveHeight := state.maxHeight + 1
-
-	// Initialize buckets
-	for _, node := range state.nodes {
-		if node != source && node != sink {
-			if state.getExcess(node) > state.epsilon && state.getHeight(node) <= state.maxHeight {
-				h := state.getHeight(node)
-				buckets[h] = append(buckets[h], node)
-				inBucket[node] = true
-				if h < minActiveHeight {
-					minActiveHeight = h
-				}
+	// Add initially active nodes
+	for i := 0; i < state.n; i++ {
+		if i != state.sourceIdx && i != state.sinkIdx {
+			if state.data[i].excess > state.epsilon && state.data[i].height <= state.maxHeight {
+				bq.push(i, state.data[i].height)
 			}
 		}
 	}
 
 	iterations := 0
-	globalRelabelFreq := state.n
 	const checkInterval = 100
 
-	for minActiveHeight <= state.maxHeight {
+	for !bq.isEmpty() {
 		if options.MaxIterations > 0 && iterations >= options.MaxIterations {
 			break
 		}
@@ -474,7 +716,7 @@ func PushRelabelLowestLabelWithContext(ctx context.Context, g *graph.ResidualGra
 			select {
 			case <-ctx.Done():
 				return &PushRelabelResult{
-					MaxFlow:    state.getExcess(sink),
+					MaxFlow:    state.data[state.sinkIdx].excess,
 					Iterations: iterations,
 					Canceled:   true,
 				}
@@ -482,75 +724,32 @@ func PushRelabelLowestLabelWithContext(ctx context.Context, g *graph.ResidualGra
 			}
 		}
 
-		// Periodic global relabeling
-		if iterations > 0 && iterations%globalRelabelFreq == 0 {
-			state.globalRelabel()
-			// Rebuild buckets
-			for i := range buckets {
-				buckets[i] = buckets[i][:0]
-			}
-			if minActiveHeight > state.maxHeight {
-				break
-			}
-			for k := range inBucket {
-				delete(inBucket, k)
-			}
-			minActiveHeight = state.maxHeight + 1
-
-			for _, node := range state.nodes {
-				if node != source && node != sink {
-					if state.getExcess(node) > state.epsilon && state.getHeight(node) <= state.maxHeight {
-						h := state.getHeight(node)
-						buckets[h] = append(buckets[h], node)
-						inBucket[node] = true
-						if h < minActiveHeight {
-							minActiveHeight = h
-						}
-					}
-				}
-			}
-		}
-
-		// Find non-empty bucket with minimum height
-		for minActiveHeight <= state.maxHeight && len(buckets[minActiveHeight]) == 0 {
-			minActiveHeight++
-		}
-
-		if minActiveHeight > state.maxHeight {
+		uIdx, ok := bq.popLowest()
+		if !ok {
 			break
 		}
 
-		// Extract vertex from bucket
-		bucket := buckets[minActiveHeight]
-		u := bucket[len(bucket)-1]
-		buckets[minActiveHeight] = bucket[:len(bucket)-1]
-		delete(inBucket, u)
-
-		// Skip if no longer valid
-		if state.getExcess(u) <= state.epsilon || state.getHeight(u) != minActiveHeight {
+		// Skip if no longer active
+		if state.data[uIdx].excess <= state.epsilon || state.data[uIdx].height > state.maxHeight {
 			continue
 		}
 
+		oldHeight := state.data[uIdx].height
+
 		// Discharge
-		state.discharge(u, func(v int64) {
-			if v != source && v != sink && !inBucket[v] {
-				if state.getExcess(v) > state.epsilon && state.getHeight(v) <= state.maxHeight {
-					h := state.getHeight(v)
-					buckets[h] = append(buckets[h], v)
-					inBucket[v] = true
-					if h < minActiveHeight {
-						minActiveHeight = h
-					}
-				}
+		stillActive := state.discharge(uIdx, func(vIdx int) {
+			if state.data[vIdx].excess > state.epsilon && state.data[vIdx].height <= state.maxHeight {
+				bq.push(vIdx, state.data[vIdx].height)
 			}
 		})
 
 		// Re-add if still active
-		if state.getExcess(u) > state.epsilon && state.getHeight(u) <= state.maxHeight {
-			if !inBucket[u] {
-				h := state.getHeight(u)
-				buckets[h] = append(buckets[h], u)
-				inBucket[u] = true
+		if stillActive {
+			newHeight := state.data[uIdx].height
+			if newHeight != oldHeight {
+				bq.push(uIdx, newHeight)
+			} else {
+				bq.push(uIdx, oldHeight)
 			}
 		}
 
@@ -558,210 +757,8 @@ func PushRelabelLowestLabelWithContext(ctx context.Context, g *graph.ResidualGra
 	}
 
 	return &PushRelabelResult{
-		MaxFlow:    state.getExcess(sink),
+		MaxFlow:    state.data[state.sinkIdx].excess,
 		Iterations: iterations,
 		Canceled:   false,
-	}
-}
-
-// =============================================================================
-// Core Operations
-// =============================================================================
-
-// initialize sets up the initial preflow and heights.
-func (s *pushRelabelState) initialize() {
-	// Initialize heights: source = n, others = 0
-	for i := range s.height {
-		s.height[i] = 0
-	}
-	s.setHeight(s.source, s.n)
-
-	// Count vertices at each height
-	for i := range s.heightCount {
-		s.heightCount[i] = 0
-	}
-	for _, node := range s.nodes {
-		h := s.getHeight(node)
-		if h <= s.maxHeight {
-			s.heightCount[h]++
-		}
-	}
-
-	// Initial push from source: saturate all outgoing edges
-	edges := s.g.GetNeighborsList(s.source)
-	for _, edge := range edges {
-		if edge.Capacity > s.epsilon {
-			flow := edge.Capacity
-			s.g.UpdateFlow(s.source, edge.To, flow)
-			s.addExcess(edge.To, flow)
-			s.addExcess(s.source, -flow)
-		}
-	}
-
-	// Global relabel for accurate initial heights
-	s.globalRelabel()
-}
-
-// globalRelabel recomputes heights using reverse BFS from sink.
-// Uses deterministic ordering for reproducible results.
-//
-// The algorithm traverses the graph in reverse: for each node u, we find
-// all nodes v that have an edge TO u with positive residual capacity.
-// This means v can push flow to u, so height[v] = height[u] + 1.
-//
-// Implementation Note:
-// GetIncomingEdgesList(u) returns edges where the edge goes FROM some node TO u.
-// The Edge.Capacity is the capacity of that forward edge (from -> u).
-func (s *pushRelabelState) globalRelabel() {
-	// Reset height counts
-	for i := range s.heightCount {
-		s.heightCount[i] = 0
-	}
-
-	// Initialize new heights to maxHeight + 1 (unreachable)
-	newHeight := make([]int, s.n)
-	for i := range newHeight {
-		newHeight[i] = s.maxHeight + 1
-	}
-	newHeight[s.nodeIdx[s.sink]] = 0
-
-	// BFS from sink using reverse edges
-	queue := make([]int64, 0, s.n)
-	queue = append(queue, s.sink)
-	head := 0
-
-	for head < len(queue) {
-		u := queue[head]
-		head++
-
-		uHeight := newHeight[s.nodeIdx[u]]
-
-		// Get all edges that point TO u (i.e., edges v -> u)
-		// For each such edge, if it has capacity, then v can reach u
-		incomingList := s.g.GetIncomingEdgesList(u)
-		for _, incoming := range incomingList {
-			v := incoming.From
-			vIdx := s.nodeIdx[v]
-
-			// incoming.Edge represents the edge v -> u
-			// If this edge has capacity, v can push flow to u
-			if newHeight[vIdx] > s.maxHeight && incoming.Edge.Capacity > s.epsilon {
-				newHeight[vIdx] = uHeight + 1
-				queue = append(queue, v)
-			}
-		}
-	}
-
-	// Source always has height n
-	newHeight[s.nodeIdx[s.source]] = s.n
-
-	// Apply new heights
-	for i, h := range newHeight {
-		s.height[i] = h
-		if h <= s.maxHeight {
-			s.heightCount[h]++
-		}
-	}
-
-	// Reset current arcs
-	for i := range s.currentArc {
-		s.currentArc[i] = 0
-	}
-}
-
-// discharge processes a vertex until it has no excess or cannot push.
-func (s *pushRelabelState) discharge(u int64, onActivate func(int64)) {
-	edges := s.g.GetNeighborsList(u)
-	if edges == nil {
-		return
-	}
-
-	for s.getExcess(u) > s.epsilon && s.getHeight(u) <= s.maxHeight {
-		currentArc := s.getCurrentArc(u)
-
-		if currentArc >= len(edges) {
-			if !s.relabel(u) {
-				break
-			}
-			s.setCurrentArc(u, 0)
-			continue
-		}
-
-		edge := edges[currentArc]
-		v := edge.To
-
-		if edge.Capacity > s.epsilon && s.getHeight(u) == s.getHeight(v)+1 {
-			delta := min(s.getExcess(u), edge.Capacity)
-			s.g.UpdateFlow(u, v, delta)
-			s.addExcess(u, -delta)
-			s.addExcess(v, delta)
-
-			if onActivate != nil {
-				onActivate(v)
-			}
-		} else {
-			s.setCurrentArc(u, currentArc+1)
-		}
-	}
-}
-
-// relabel increases the height of a vertex.
-func (s *pushRelabelState) relabel(u int64) bool {
-	oldHeight := s.getHeight(u)
-	if oldHeight > s.maxHeight {
-		return false
-	}
-
-	edges := s.g.GetNeighborsList(u)
-	if edges == nil {
-		s.heightCount[oldHeight]--
-		s.setHeight(u, s.maxHeight+1)
-		return false
-	}
-
-	// Find minimum height among neighbors with residual capacity
-	minHeight := s.maxHeight + 1
-	for _, edge := range edges {
-		if edge.Capacity > s.epsilon {
-			h := s.getHeight(edge.To)
-			if h < minHeight {
-				minHeight = h
-			}
-		}
-	}
-
-	if minHeight >= s.maxHeight {
-		s.heightCount[oldHeight]--
-		s.setHeight(u, s.maxHeight+1)
-		return false
-	}
-
-	newHeight := minHeight + 1
-	if newHeight > s.maxHeight {
-		s.heightCount[oldHeight]--
-		s.setHeight(u, s.maxHeight+1)
-		return false
-	}
-
-	// Gap heuristic: if this height becomes empty, vertices above are unreachable
-	s.heightCount[oldHeight]--
-	if s.heightCount[oldHeight] == 0 && oldHeight < s.n {
-		s.applyGapHeuristic(oldHeight)
-	}
-
-	s.heightCount[newHeight]++
-	s.setHeight(u, newHeight)
-
-	return true
-}
-
-// applyGapHeuristic raises all vertices above the gap to maxHeight + 1.
-func (s *pushRelabelState) applyGapHeuristic(gapHeight int) {
-	for i, node := range s.nodes {
-		h := s.height[i]
-		if h > gapHeight && h <= s.maxHeight && node != s.source {
-			s.heightCount[h]--
-			s.height[i] = s.maxHeight + 1
-		}
 	}
 }

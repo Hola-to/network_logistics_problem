@@ -82,10 +82,12 @@ var globalPool = &GraphPool{
 	graphs: sync.Pool{
 		New: func() any {
 			return &ResidualGraph{
-				Nodes:        make(map[int64]bool, 64),
-				Edges:        make(map[int64]map[int64]*ResidualEdge, 64),
-				EdgesList:    make(map[int64][]*ResidualEdge, 64),
-				ReverseEdges: make(map[int64]map[int64]*ResidualEdge, 64),
+				Nodes:                  make(map[int64]bool, 64),
+				Edges:                  make(map[int64]map[int64]*ResidualEdge, 64),
+				EdgesList:              make(map[int64][]*ResidualEdge, 64),
+				ReverseEdges:           make(map[int64]map[int64]*ResidualEdge, 64),
+				IncomingEdgesListCache: make(map[int64][]IncomingEdge, 64),
+				incomingCacheDirty:     true,
 			}
 		},
 	},
