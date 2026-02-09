@@ -89,7 +89,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           # Используем пути, определенные в шаге 'Prepare build context'
           context: ${{ steps.context.outputs.DIR }}
