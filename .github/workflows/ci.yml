@@ -89,7 +89,7 @@ jobs:
           go test -race -coverprofile=coverage.out -covermode=atomic ./pkg/... ./services/...
 
       - name: Upload Coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
