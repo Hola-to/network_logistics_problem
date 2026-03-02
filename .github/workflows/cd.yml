@@ -166,7 +166,7 @@ jobs:
       # SSH деплой
       - name: Deploy via SSH
         if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY == 'true'
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.STAGING_HOST }}
           username: ${{ secrets.STAGING_USER }}
@@ -266,7 +266,7 @@ jobs:
       # SSH деплой
       - name: Deploy via SSH
         if: env.HAS_KUBE_CONFIG != 'true' && env.HAS_SSH_KEY == 'true'
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
